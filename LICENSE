@@ -1,0 +1,24 @@
+IronCoach - Triathlon Training Dashboard
+Copyright (C) 2026 Ori Vardi
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+DISCLAIMER: This software is provided as-is. The developer assumes no
+responsibility for any costs, damages, data loss, or other issues
+arising from use of this software. You are solely responsible for your
+own API costs and data. Use at your own risk.
+
+---
+
+For commercial licensing options, see LICENSE-COMMERCIAL.md

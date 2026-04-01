@@ -1,0 +1,38 @@
+# ── IDE ──────────────────────────────────────────
+.idea/
+
+# ── Personal / Temporary ──────────────────────────
+tmp/
+
+# ── Training Data (personal health data) ─────────
+# The app generates these on first import — new users start empty
+training_data/users/
+training_data/export.xml
+training_data/workout-routes
+
+# ── Application Data ─────────────────────────────
+# Auto-created on first run — covers uploads, logs, backups, jwt_secret, db
+backend/data/
+*.db-journal
+*.db-wal
+
+# ── Python ───────────────────────────────────────
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# ── Node ─────────────────────────────────────────
+node_modules/
+
+# ── Build output ─────────────────────────────────
+frontend/dist/
+
+# ── Environment ──────────────────────────────────
+.env
+
+# ── Claude Code ──────────────────────────────────
+# Override global ignore — project safety rules (deny rm) belong in repo
+!.claude/settings.local.json
+
+# ── OS ───────────────────────────────────────────
+.DS_Store
