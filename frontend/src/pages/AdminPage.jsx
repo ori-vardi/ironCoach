@@ -348,7 +348,7 @@ function NumSelect({ value, options, unit = '', settingKey, onSave, saving, min 
       <select
         className="input-sm"
         style={{ width: 'auto', minWidth: 70 }}
-        value={isCustom ? '__custom' : value}
+        value={value}
         onChange={e => {
           if (e.target.value === '__custom') { setDraft(String(value)); setEditMode(true) }
           else onSave(settingKey, e.target.value)
@@ -529,7 +529,7 @@ function SettingsTab() {
       </h4>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <NumSelect value={llmPreflightHours} settingKey="llm_preflight_hours" onSave={saveSetting} saving={saving} min={0} max={24} unit="h" float step={0.5} t={t}
-          options={[{value: 0, label: 'Off'}, {value: 0.5, label: '0.5'}, {value: 1, label: '1'}, {value: 2, label: '2'}, {value: 4, label: '4'}, {value: 8, label: '8'}]} />
+          options={[{value: 0, label: 'Off'}, {value: 0.5, label: '0.5'}, {value: 1, label: '1'}, {value: 2, label: '2'}, {value: 4, label: '4'}, {value: 6, label: '6'}, {value: 8, label: '8'}, {value: 12, label: '12'}]} />
       </div>
     </div>
 
