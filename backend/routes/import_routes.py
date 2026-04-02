@@ -387,15 +387,20 @@ async def _do_import(request: Request, folder_path: str, force: bool = False):
             logger.warning(f"Failed to enumerate new workouts: {e}")
 
     # Detect brick sessions among new workouts (different disciplines, <30min gap)
+    # Only include bricks where at least one member is genuinely new (no insight, not dismissed)
     brick_sessions = []
     if new_nums and all_workouts:
         try:
             bricks = _detect_brick_sessions(all_workouts)
             for b in bricks:
                 brick_nums = [int(bw.get("workout_num", 0)) for bw in b["workouts"]]
-                if any(n in new_nums for n in brick_nums):
-                    sorted_bw = sorted(b["workouts"], key=lambda w: w.get("startDate", ""))
-                    brick_sessions.append({
+                if not any(n in new_nums for n in brick_nums):
+                    continue
+                # Skip bricks where all members already have insights or are dismissed
+                if all(n in existing_nums or n in dismissed_nums for n in brick_nums):
+                    continue
+                sorted_bw = sorted(b["workouts"], key=lambda w: w.get("startDate", ""))
+                brick_sessions.append({
                         "brick_type": b.get("brick_type", ""),
                         "transition_times": b.get("transition_times", []),
                         "date": sorted_bw[0].get("startDate", "")[:10],
@@ -439,21 +444,35 @@ async def _do_import(request: Request, folder_path: str, force: bool = False):
                 existing_raw = await db.setting_get(conn, f"pending_import_{uid}", "")
                 if existing_raw:
                     existing = json.loads(existing_raw)
-                    existing_nums = {int(w.get("workout_num", 0)) for w in existing.get("workouts", [])}
+                    pending_nums = {int(w.get("workout_num", 0)) for w in existing.get("workouts", [])}
                     # Append only truly new workouts (avoid duplicates from re-import)
                     for w in new_workouts:
-                        if int(w.get("workout_num", 0)) not in existing_nums:
+                        if int(w.get("workout_num", 0)) not in pending_nums:
                             existing["workouts"].append(w)
                     existing["datesWithNutrition"] = list(set(existing.get("datesWithNutrition", [])) | dates_with_nutrition)
                     existing_mc_keys = {tuple(sorted(mc.get("workout_nums", []))) for mc in existing.get("mergeCandidates", [])}
                     for mc in merge_candidates:
                         if tuple(sorted(mc.get("workout_nums", []))) not in existing_mc_keys:
                             existing["mergeCandidates"].append(mc)
+                    # Merge brick sessions — also filter out stale bricks (all members dismissed/insighted)
                     existing_bs_keys = {tuple(sorted(int(w.get("workout_num", 0)) for w in bs.get("workouts", []))) for bs in existing.get("brickSessions", [])}
                     for bs in brick_sessions:
                         key = tuple(sorted(int(w.get("workout_num", 0)) for w in bs.get("workouts", [])))
                         if key not in existing_bs_keys:
                             existing["brickSessions"].append(bs)
+                    # Remove stale entries: workouts now dismissed/insighted, bricks fully resolved
+                    existing["workouts"] = [
+                        w for w in existing["workouts"]
+                        if int(w.get("workout_num", 0)) not in existing_nums
+                        and int(w.get("workout_num", 0)) not in dismissed_nums
+                    ]
+                    existing["brickSessions"] = [
+                        bs for bs in existing.get("brickSessions", [])
+                        if not all(
+                            int(w.get("workout_num", 0)) in existing_nums or int(w.get("workout_num", 0)) in dismissed_nums
+                            for w in bs.get("workouts", [])
+                        )
+                    ]
                     merged = existing
                 else:
                     merged = {
