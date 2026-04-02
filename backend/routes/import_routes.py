@@ -15,8 +15,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 
 import database as db
-from config import TRAINING_DATA, BASE_DIR, PROJECT_ROOT, logger, _MERGEABLE_DISCIPLINES, INSIGHT_CUTOFF_DATE
-from routes.deps import _require_admin, _uid, _user_data_dir
+from config import PROJECT_ROOT, logger, _MERGEABLE_DISCIPLINES, INSIGHT_CUTOFF_DATE
+from routes.deps import _uid, _user_data_dir
 from services.task_tracker import _register_task, _unregister_task
 
 _EXPORT_XML_NAMES = {"export.xml", "ייצוא.xml"}
@@ -54,6 +54,22 @@ from data_processing import (
 
 
 router = APIRouter()
+
+
+def _wnum(w: dict) -> int:
+    return int(w.get("workout_num", 0))
+
+
+def _workout_summary(w: dict) -> dict:
+    return {
+        "workout_num": _wnum(w),
+        "type": w.get("type", ""),
+        "duration_min": round(_safe_float(w.get("duration_min")), 1),
+        "distance_km": _workout_distance(w),
+        "start_time": w.get("startDate", "")[:19],
+        "end_time": w.get("endDate", "")[:19],
+        "tz": w.get("meta_TimeZone", ""),
+    }
 
 
 @router.get("/api/pick-folder")
@@ -272,7 +288,7 @@ async def _do_import(request: Request, folder_path: str, force: bool = False):
     dismissed_nums = set()
     if success and all_workouts:
         try:
-            wmap = {int(w.get("workout_num", 0)): w for w in all_workouts}
+            wmap = {_wnum(w): w for w in all_workouts}
             conn = await db.get_db()
             try:
                 all_insights = await db.insight_get_all(conn, user_id=uid)
@@ -304,13 +320,14 @@ async def _do_import(request: Request, folder_path: str, force: bool = False):
 
     # Build set of genuinely new workout nums (no insight, not dismissed)
     # Used for both merge candidate filtering and new_workouts response
+    resolved_nums = existing_nums | dismissed_nums
     new_nums = set()
     if has_new and all_workouts:
         for w in all_workouts:
-            wnum = int(w.get("workout_num", 0))
+            wn = _wnum(w)
             wdate = w.get("startDate", "")[:10]
-            if wdate >= INSIGHT_CUTOFF_DATE and wnum not in existing_nums and wnum not in dismissed_nums:
-                new_nums.add(wnum)
+            if wdate >= INSIGHT_CUTOFF_DATE and wn not in resolved_nums:
+                new_nums.add(wn)
     logger.info(f"Import post-process: has_new={has_new}, all_workouts={len(all_workouts)}, "
                 f"new_nums={len(new_nums)}, existing={len(existing_nums)}, dismissed={len(dismissed_nums)}")
 
@@ -323,8 +340,8 @@ async def _do_import(request: Request, folder_path: str, force: bool = False):
             already_merged = _load_manual_merges(uid)
             for i in range(1, len(sorted_all)):
                 prev, curr = sorted_all[i - 1], sorted_all[i]
-                prev_num = int(prev.get("workout_num", 0))
-                curr_num = int(curr.get("workout_num", 0))
+                prev_num = _wnum(prev)
+                curr_num = _wnum(curr)
                 if prev_num not in new_nums and curr_num not in new_nums:
                     continue
                 if (min(prev_num, curr_num), max(prev_num, curr_num)) in already_merged:
@@ -345,22 +362,16 @@ async def _do_import(request: Request, folder_path: str, force: bool = False):
                 except (ValueError, TypeError):
                     continue
                 if _MERGE_CANDIDATE_GAP_MIN <= gap_min <= _MERGE_CANDIDATE_GAP_MAX:
+                    prev_s = _workout_summary(prev)
+                    curr_s = _workout_summary(curr)
                     merge_candidates.append({
                         "workout_a": prev_num,
                         "workout_b": curr_num,
                         "type": prev.get("type", ""),
                         "gap_min": round(gap_min, 1),
                         "date": prev.get("startDate", "")[:10],
-                        "a_duration_min": round(_safe_float(prev.get("duration_min")), 1),
-                        "a_distance_km": _workout_distance(prev),
-                        "a_start_time": prev.get("startDate", "")[:19],
-                        "a_end_time": prev.get("endDate", "")[:19],
-                        "a_tz": prev.get("meta_TimeZone", ""),
-                        "b_duration_min": round(_safe_float(curr.get("duration_min")), 1),
-                        "b_distance_km": _workout_distance(curr),
-                        "b_start_time": curr.get("startDate", "")[:19],
-                        "b_end_time": curr.get("endDate", "")[:19],
-                        "b_tz": curr.get("meta_TimeZone", ""),
+                        **{f"a_{k}": v for k, v in prev_s.items() if k not in ("workout_num", "type")},
+                        **{f"b_{k}": v for k, v in curr_s.items() if k not in ("workout_num", "type")},
                     })
         except Exception as e:
             logger.warning(f"Failed to detect merge candidates: {e}")
@@ -370,18 +381,10 @@ async def _do_import(request: Request, folder_path: str, force: bool = False):
     if new_nums and all_workouts:
         try:
             for w in all_workouts:
-                wnum = int(w.get("workout_num", 0))
-                if wnum in new_nums:
-                    new_workouts.append({
-                        "workout_num": wnum,
-                        "date": w.get("startDate", "")[:10],
-                        "type": w.get("type", ""),
-                        "duration_min": _safe_float(w.get("duration_min")),
-                        "distance_km": _workout_distance(w),
-                        "start_time": w.get("startDate", "")[:19],
-                        "end_time": w.get("endDate", "")[:19],
-                        "tz": w.get("meta_TimeZone", ""),
-                    })
+                if _wnum(w) in new_nums:
+                    s = _workout_summary(w)
+                    s["date"] = w.get("startDate", "")[:10]
+                    new_workouts.append(s)
             logger.info(f"Import found {len(new_workouts)} new workouts pending insights")
         except Exception as e:
             logger.warning(f"Failed to enumerate new workouts: {e}")
@@ -393,83 +396,66 @@ async def _do_import(request: Request, folder_path: str, force: bool = False):
         try:
             bricks = _detect_brick_sessions(all_workouts)
             for b in bricks:
-                brick_nums = [int(bw.get("workout_num", 0)) for bw in b["workouts"]]
-                if not any(n in new_nums for n in brick_nums):
-                    continue
-                # Skip bricks where all members already have insights or are dismissed
-                if all(n in existing_nums or n in dismissed_nums for n in brick_nums):
+                brick_nums = {_wnum(bw) for bw in b["workouts"]}
+                if not (brick_nums & new_nums):
                     continue
                 sorted_bw = sorted(b["workouts"], key=lambda w: w.get("startDate", ""))
                 brick_sessions.append({
-                        "brick_type": b.get("brick_type", ""),
-                        "transition_times": b.get("transition_times", []),
-                        "date": sorted_bw[0].get("startDate", "")[:10],
-                        "workouts": [{
-                            "workout_num": int(bw.get("workout_num", 0)),
-                            "type": bw.get("type", ""),
-                            "duration_min": round(_safe_float(bw.get("duration_min")), 1),
-                            "distance_km": _workout_distance(bw),
-                            "start_time": bw.get("startDate", "")[:19],
-                            "end_time": bw.get("endDate", "")[:19],
-                            "tz": bw.get("meta_TimeZone", ""),
-                        } for bw in sorted_bw],
-                    })
+                    "brick_type": b.get("brick_type", ""),
+                    "transition_times": b.get("transition_times", []),
+                    "date": sorted_bw[0].get("startDate", "")[:10],
+                    "workouts": [_workout_summary(bw) for bw in sorted_bw],
+                })
         except Exception as e:
             logger.warning(f"Failed to detect brick sessions: {e}")
 
-    # Check which workout dates have nutrition data logged
+    # Check which workout dates have nutrition data logged + persist pending import
     dates_with_nutrition = set()
-    if new_workouts:
-        try:
-            workout_dates = list({w["date"] for w in new_workouts})
-            conn = await db.get_db()
-            try:
-                placeholders = ",".join("?" for _ in workout_dates)
-                cursor = await conn.execute(
-                    f"SELECT DISTINCT date FROM nutrition_log WHERE user_id = ? AND date IN ({placeholders})",
-                    (uid, *workout_dates)
-                )
-                dates_with_nutrition = {row["date"] for row in await cursor.fetchall()}
-            finally:
-                await conn.close()
-        except Exception as e:
-            logger.warning(f"Failed to check nutrition dates: {e}")
-
-    # Persist pending import data in DB (user-scoped) so it survives cache clear
-    # Merge with existing pending data (user may upload multiple files before acting)
     if new_workouts or merge_candidates or brick_sessions:
         try:
             conn = await db.get_db()
             try:
+                if new_workouts:
+                    workout_dates = list({w["date"] for w in new_workouts})
+                    placeholders = ",".join("?" for _ in workout_dates)
+                    cursor = await conn.execute(
+                        f"SELECT DISTINCT date FROM nutrition_log WHERE user_id = ? AND date IN ({placeholders})",
+                        (uid, *workout_dates)
+                    )
+                    dates_with_nutrition = {row["date"] for row in await cursor.fetchall()}
+
                 existing_raw = await db.setting_get(conn, f"pending_import_{uid}", "")
                 if existing_raw:
                     existing = json.loads(existing_raw)
-                    pending_nums = {int(w.get("workout_num", 0)) for w in existing.get("workouts", [])}
+                    pending_nums = {_wnum(w) for w in existing.get("workouts", [])}
                     # Append only truly new workouts (avoid duplicates from re-import)
                     for w in new_workouts:
-                        if int(w.get("workout_num", 0)) not in pending_nums:
+                        if _wnum(w) not in pending_nums:
                             existing["workouts"].append(w)
                     existing["datesWithNutrition"] = list(set(existing.get("datesWithNutrition", [])) | dates_with_nutrition)
-                    existing_mc_keys = {tuple(sorted(mc.get("workout_nums", []))) for mc in existing.get("mergeCandidates", [])}
+                    def _mc_key(mc):
+                        a, b = mc.get("workout_a", 0), mc.get("workout_b", 0)
+                        return (min(a, b), max(a, b))
+                    existing_mc_keys = {_mc_key(mc) for mc in existing.get("mergeCandidates", [])}
                     for mc in merge_candidates:
-                        if tuple(sorted(mc.get("workout_nums", []))) not in existing_mc_keys:
+                        if _mc_key(mc) not in existing_mc_keys:
                             existing["mergeCandidates"].append(mc)
                     # Merge brick sessions — also filter out stale bricks (all members dismissed/insighted)
-                    existing_bs_keys = {tuple(sorted(int(w.get("workout_num", 0)) for w in bs.get("workouts", []))) for bs in existing.get("brickSessions", [])}
+                    def _bs_key(bs):
+                        return tuple(sorted(_wnum(w) for w in bs.get("workouts", [])))
+                    existing_bs_keys = {_bs_key(bs) for bs in existing.get("brickSessions", [])}
                     for bs in brick_sessions:
-                        key = tuple(sorted(int(w.get("workout_num", 0)) for w in bs.get("workouts", [])))
-                        if key not in existing_bs_keys:
+                        if _bs_key(bs) not in existing_bs_keys:
                             existing["brickSessions"].append(bs)
                     # Remove stale entries: workouts now dismissed/insighted, bricks fully resolved
                     existing["workouts"] = [
                         w for w in existing["workouts"]
-                        if int(w.get("workout_num", 0)) not in existing_nums
-                        and int(w.get("workout_num", 0)) not in dismissed_nums
+                        if _wnum(w) not in resolved_nums
                     ]
                     existing["brickSessions"] = [
                         bs for bs in existing.get("brickSessions", [])
                         if not all(
-                            int(w.get("workout_num", 0)) in existing_nums or int(w.get("workout_num", 0)) in dismissed_nums
+                            _wnum(w) in resolved_nums
                             for w in bs.get("workouts", [])
                         )
                     ]

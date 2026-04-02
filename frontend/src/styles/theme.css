@@ -190,9 +190,9 @@ a:hover { text-decoration: underline; }
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    border: 1.5px solid rgba(200,211,245,0.55);
-    color: rgba(200,211,245,0.75);
-    background: rgba(130,170,255,0.15);
+    border: 1.5px solid rgba(200,211,245,0.7);
+    color: rgba(200,211,245,0.9);
+    background: rgba(130,170,255,0.18);
     font-size: 10px;
     font-weight: 700;
     font-style: italic;
@@ -847,7 +847,7 @@ a:hover { text-decoration: underline; }
     top: 6px;
     inset-inline-end: 6px;
     z-index: 2;
-    opacity: 0.5;
+    opacity: 0.85;
     transition: opacity 0.15s;
 }
 .kpi-card:hover .kpi-info-corner {
@@ -857,7 +857,7 @@ a:hover { text-decoration: underline; }
 .readiness-ring .kpi-info-corner {
     top: 2px;
     inset-inline-end: 18px;
-    opacity: 0.75;
+    opacity: 0.9;
 }
 .readiness-ring .kpi-info-corner .info-tip-icon {
     width: 18px;
@@ -3566,6 +3566,7 @@ textarea { resize: vertical; min-height: 60px; text-align: start; }
     justify-content: center;
     align-items: center;
     padding: 8px 4px;
+    overflow: visible;
     border: 2.5px solid color-mix(in srgb, var(--kpi-accent, var(--border)) 60%, var(--border));
     box-shadow:
         0 0 10px color-mix(in srgb, var(--kpi-accent, transparent) 25%, transparent),
@@ -3581,9 +3582,10 @@ textarea { resize: vertical; min-height: 60px; text-align: start; }
 .overview-ring .kpi-label { font-size: 10px; margin-top: 2px; letter-spacing: 0.3px; line-height: 1.2; }
 .overview-ring .kpi-label .text-sm { font-size: 8.5px; }
 .overview-ring .kpi-fill-bar { border-radius: 0 0 50% 50%; }
-.overview-ring .kpi-info-corner { top: 2px; right: 2px; opacity: 0; }
-.overview-ring .kpi-info-corner .info-tip-icon { width: 14px; height: 14px; font-size: 9px; }
+.overview-ring .kpi-info-corner { top: auto; bottom: 10px; right: auto; left: 50%; transform: translateX(-50%); opacity: 0.7; }
+.overview-ring .kpi-info-corner .info-tip-icon { width: 14px; height: 14px; font-size: 9px; background: rgba(15,17,23,0.8); border-color: rgba(200,211,245,0.6); color: rgba(200,211,245,0.8); }
 .overview-ring .kpi-card:hover .kpi-info-corner { opacity: 1; }
+.overview-ring .kpi-card:hover .kpi-info-corner .info-tip-icon { border-color: var(--accent); color: var(--accent); }
 /* Legacy recovery-hero kept for Recovery page */
 .recovery-hero {
     display: flex;
