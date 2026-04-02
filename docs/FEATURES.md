@@ -506,6 +506,7 @@ All settings are in **Admin > Settings** tab:
 | **Agent Model** | Override Claude model for all AI calls (chat, insights, nutrition) |
 | **Session Rotation Size** | JSONL rotation threshold in KB (default 800KB). Controls when sessions are archived and restarted. |
 | **Session Rotation Context** | AI summary vs raw messages when chat session rotates |
+| **LLM Credential Check** | Quick preflight validation before LLM calls after idle time. Fails fast on expired tokens instead of waiting minutes. Default: 6h. Set to Off to disable. |
 | **Auto-Merge** | Enable/disable + gap threshold (5-30 min) for same-discipline workout merging |
 | **Manual Merges** | View count + clear all user-approved merge pairs |
 | **Auto-regen insights on meal** | Toggle automatic insight regeneration when meals are logged |

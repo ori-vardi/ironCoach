@@ -309,13 +309,13 @@ function UsersTab() {
 }
 
 /* ─── Editable Number Select — dropdown with presets + free-text input ─── */
-function NumSelect({ value, options, unit = '', settingKey, onSave, saving, min = 1, max = 9999, t }) {
+function NumSelect({ value, options, unit = '', settingKey, onSave, saving, min = 1, max = 9999, float: isFloat = false, step, t }) {
   const [editMode, setEditMode] = useState(false)
   const [draft, setDraft] = useState(String(value))
   const isCustom = !options.some(o => o.value === value)
 
   function commitDraft() {
-    const n = parseInt(draft)
+    const n = isFloat ? parseFloat(draft) : parseInt(draft)
     if (!isNaN(n) && n >= min && n <= max) {
       onSave(settingKey, String(n))
       setEditMode(false)
@@ -332,6 +332,7 @@ function NumSelect({ value, options, unit = '', settingKey, onSave, saving, min 
           value={draft}
           min={min}
           max={max}
+          step={step || (isFloat ? 0.5 : 1)}
           autoFocus
           onChange={e => setDraft(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') commitDraft(); if (e.key === 'Escape') setEditMode(false) }}
@@ -420,6 +421,7 @@ function SettingsTab() {
   const chatSummaryMode = settings.chat_summary_mode || 'ai'
   const aiRateLimit = parseInt(settings.ai_rate_limit) || 0
   const sessionRotationKb = parseInt(settings.session_rotation_kb) || 800
+  const llmPreflightHours = parseFloat(settings.llm_preflight_hours ?? '6') || 0
   const autoMergeEnabled = settings.auto_merge_enabled !== '0'
   const autoMergeGap = parseInt(settings.auto_merge_gap) || 10
   const nutritionRegenEnabled = settings.nutrition_regen_enabled !== '0'
@@ -516,6 +518,18 @@ function SettingsTab() {
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <NumSelect value={sessionRotationKb} settingKey="session_rotation_kb" onSave={saveSetting} saving={saving} min={200} max={2000} unit="KB" t={t}
           options={[{value: 400, label: '400'}, {value: 600, label: '600'}, {value: 800, label: '800'}, {value: 1000, label: '1000'}, {value: 1200, label: '1200'}, {value: 1600, label: '1600'}]} />
+      </div>
+    </div>
+
+    {/* LLM Preflight Check */}
+    <div className="card" style={{ marginBottom: 16 }}>
+      <h4 style={{ marginBottom: 8 }}>
+        {t('admin_preflight_check')}
+        <InfoTip text={t('admin_preflight_check_tip')} />
+      </h4>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <NumSelect value={llmPreflightHours} settingKey="llm_preflight_hours" onSave={saveSetting} saving={saving} min={0} max={24} unit="h" float step={0.5} t={t}
+          options={[{value: 0, label: 'Off'}, {value: 0.5, label: '0.5'}, {value: 1, label: '1'}, {value: 2, label: '2'}, {value: 4, label: '4'}, {value: 8, label: '8'}]} />
       </div>
     </div>
 

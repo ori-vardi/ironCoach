@@ -27,9 +27,10 @@ from services.claude_cli import (
     _find_claude_cli, _build_cli_env, _track_usage, _get_model_override,
     _build_rotation_context, _summarize_chat_context,
     _generate_session_title, _generate_ai_title,
+    _llm_preflight_check,
 )
 from services.coach_preamble import _build_coach_preamble
-from services.agent_actions import extract_actions, execute_action, ACTION_PATTERN, FOLLOWUP_ACTIONS
+from services.agent_actions import extract_actions, execute_action, FOLLOWUP_ACTIONS
 from auth import decode_jwt
 
 
@@ -244,6 +245,16 @@ async def _handle_chat_message(websocket: WebSocket, data: dict, ws_user_id: int
                                user_id=ws_user_id)
             return
 
+        # Quick credential check (only if idle for configured hours)
+        preflight_err = await _llm_preflight_check()
+        if preflight_err:
+            logger.error(f"LLM preflight failed [{session_id[:8]}]: {preflight_err}")
+            await ws_send({"type": "error", "text": preflight_err})
+            await db.chat_save(conn, session_id, "assistant",
+                               f"[Error: {preflight_err}]",
+                               user_id=ws_user_id)
+            return
+
         stored_agent = await db.chat_get_agent(conn, session_id)
         if stored_agent and stored_agent != "main-coach":
             agent_name = stored_agent
@@ -265,8 +276,9 @@ async def _handle_chat_message(websocket: WebSocket, data: dict, ws_user_id: int
     # Rotate oversized CLI sessions — threshold from admin settings, skip for dev mode
     cli_jsonl = _SESSIONS_DIR / f"{agent_session_uuid}.jsonl"
     rotation_bytes = rotation_kb * 1024
-    if chat_mode != "dev" and existing and cli_jsonl.exists() and cli_jsonl.stat().st_size > rotation_bytes:
-        old_size_kb = cli_jsonl.stat().st_size / 1024
+    cli_size = cli_jsonl.stat().st_size if (chat_mode != "dev" and existing and cli_jsonl.exists()) else 0
+    if cli_size > rotation_bytes:
+        old_size_kb = cli_size / 1024
         ts = int(time.time())
         rotated = cli_jsonl.with_suffix(f".{ts}.jsonl.bak")
         while rotated.exists():
@@ -332,7 +344,7 @@ async def _handle_chat_message(websocket: WebSocket, data: dict, ws_user_id: int
                 summary_mode = await db.setting_get(conn2, "chat_summary_mode", "ai")
             finally:
                 await conn2.close()
-            if recent:
+            if recent and len(recent) > 1:
                 recent.reverse()  # oldest first
                 messages = [{"role": msg["role"], "content": msg["content"]} for msg in recent]
 

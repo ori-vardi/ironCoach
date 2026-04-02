@@ -19,7 +19,7 @@ from services.insights_engine import (
     _generate_insights_batch, _generate_insight_for_workout, _generate_brick_insight,
     _maybe_regenerate_insight_for_date, _rebuild_insights_file,
     _build_general_prompt, _call_claude_for_insight,
-    _build_period_prompt, _load_recovery_data_range,
+    _load_recovery_data_range, _split_plan_comparison,
     _extract_and_save_nutrition_from_notes,
 )
 from data_processing import _load_summary, _safe_float, _classify_type, _workout_distance, _detect_brick_sessions
@@ -500,8 +500,7 @@ async def insights_generate_one(num: int, request: Request):
 @router.post("/api/insights/fix/{num}")
 async def insights_fix_one(num: int, request: Request):
     """QA fact-check an existing insight using Haiku (cheap). Corrects factual errors."""
-    from services.claude_cli import _find_claude_cli, _track_usage
-    from services.insights_engine import _build_cli_env
+    from services.claude_cli import _find_claude_cli, _track_usage, _llm_preflight_check, _build_cli_env
     from config import PROJECT_ROOT
 
     uid = _uid(request)
@@ -556,6 +555,9 @@ async def insights_fix_one(num: int, request: Request):
     cli = _find_claude_cli()
     if not cli:
         raise HTTPException(500, "Claude CLI not found")
+    preflight_err = await _llm_preflight_check()
+    if preflight_err:
+        raise HTTPException(503, preflight_err)
 
     env = _build_cli_env()
     proc = await asyncio.create_subprocess_exec(
@@ -576,12 +578,9 @@ async def insights_fix_one(num: int, request: Request):
 
     changed = qa_text.strip() != existing["insight"].strip()
     if changed:
-        # Save corrected insight
-        plan_cmp = existing.get("plan_comparison", "")
-        if "**Plan comparison**" in qa_text:
-            parts = qa_text.split("**Plan comparison**")
-            qa_text = parts[0].strip()
-            plan_cmp = "**Plan comparison**" + parts[1].strip()
+        qa_text, plan_cmp = _split_plan_comparison(qa_text)
+        if not plan_cmp:
+            plan_cmp = existing.get("plan_comparison", "")
         conn = await db.get_db()
         try:
             await db.insight_save(conn, num, wdate, w.get("type", ""), qa_text, plan_cmp, user_id=uid)
@@ -933,9 +932,13 @@ async def admin_chat_sessions(request: Request):
             claude_uuid = coach_session_id(f"{agent}-user{s.get('user_id', 1)}")
         s["claude_session_uuid"] = claude_uuid
         jsonl_path = _SESSIONS_DIR / f"{claude_uuid}.jsonl"
-        s["claude_file_path"] = str(jsonl_path) if jsonl_path.exists() else ""
-        s["claude_file_size"] = jsonl_path.stat().st_size if jsonl_path.exists() else 0
-        # Find .bak rotation files for this session
+        try:
+            jsonl_stat = jsonl_path.stat()
+            s["claude_file_path"] = str(jsonl_path)
+            s["claude_file_size"] = jsonl_stat.st_size
+        except FileNotFoundError:
+            s["claude_file_path"] = ""
+            s["claude_file_size"] = 0
         bak_files = sorted(_SESSIONS_DIR.glob(f"{claude_uuid}.*.jsonl.bak"), reverse=True) if _SESSIONS_DIR.exists() else []
         s["bak_files"] = [{"path": str(b), "size": b.stat().st_size, "name": b.name} for b in bak_files]
     return sessions

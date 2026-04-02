@@ -119,6 +119,71 @@ def _build_cli_env() -> dict:
     return {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
 
 
+# --- LLM preflight credential check ---
+_preflight_last_ok: float = 0.0  # timestamp of last successful LLM interaction
+_PREFLIGHT_TIMEOUT = 15  # seconds for the check CLI call
+
+async def _llm_preflight_check() -> str | None:
+    """Quick CLI call to verify credentials are valid. Returns error string or None if OK.
+
+    Only runs if enough time has passed since the last successful LLM call
+    (controlled by admin setting 'llm_preflight_hours', default 1 hour).
+    """
+    global _preflight_last_ok
+    try:
+        conn = await db.get_db()
+        try:
+            hours = float(await db.setting_get(conn, "llm_preflight_hours", "6"))
+        finally:
+            await conn.close()
+    except Exception:
+        hours = 1.0
+
+    if hours <= 0:
+        return None  # disabled
+
+    elapsed = time.time() - _preflight_last_ok
+    if elapsed < hours * 3600:
+        return None  # recently verified
+
+    cli = _find_claude_cli()
+    if not cli:
+        return "Claude CLI not found"
+
+    env = _build_cli_env()
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            cli, "--bare", "-p", "hi", "--output-format", "stream-json",
+            "--no-session-persistence", "--model", "haiku", "--max-turns", "1",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            cwd=str(PROJECT_ROOT), env=env,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=_PREFLIGHT_TIMEOUT)
+        if proc.returncode == 0:
+            _preflight_last_ok = time.time()
+            return None  # credentials OK
+        err = stderr.decode("utf-8", errors="replace").strip()
+        # Check for auth-related errors
+        auth_keywords = ("security token", "expired", "403", "authentication", "credentials", "not authorized")
+        if any(kw in err.lower() for kw in auth_keywords):
+            return f"Failed to authenticate. {err[:200]}"
+        # Non-auth error — let the main call handle it, mark as OK to avoid blocking
+        _preflight_last_ok = time.time()
+        return None
+    except asyncio.TimeoutError:
+        # Timeout on preflight — don't block, let main call proceed
+        return None
+    except Exception as e:
+        logger.warning(f"Preflight check error: {e}")
+        return None
+
+
+def _preflight_mark_ok():
+    """Mark that a successful LLM interaction just happened."""
+    global _preflight_last_ok
+    _preflight_last_ok = time.time()
+
+
 async def _get_model_override() -> str | None:
     """Read admin model override from DB settings. Returns short alias or None."""
     try:
@@ -135,6 +200,7 @@ async def _get_model_override() -> str | None:
 async def _track_usage(result_json: dict, source: str, agent_name: str = "",
                        session_id: str = "", user_id: int = 1):
     """Extract usage/cost from Claude CLI JSON result and save to DB."""
+    _preflight_mark_ok()  # successful LLM interaction
     try:
         usage = result_json.get("usage", {})
         cost = result_json.get("total_cost_usd", 0) or 0
@@ -259,6 +325,12 @@ async def _summarize_chat_context(messages: list[dict], user_id: int = 1) -> str
     if not cli:
         return raw_text
 
+    # Preflight check (cached — near-zero cost if recently verified)
+    preflight_err = await _llm_preflight_check()
+    if preflight_err:
+        logger.warning(f"Chat summary skipped — preflight failed: {preflight_err}")
+        return raw_text
+
     prompt = (
         "Summarize this coaching conversation in 3-5 bullet points. "
         "Focus on: topics discussed, decisions made, advice given, and any pending questions. "
@@ -322,8 +394,9 @@ async def _call_agent(agent_name: str, prompt: str, session_name: str,
         await conn_r.close()
     model_override = normalize_model(model_raw) or ""
     rotation_bytes = rotation_kb * 1024
-    if session_exists and session_file.stat().st_size > rotation_bytes:
-        old_size_kb = session_file.stat().st_size / 1024
+    session_size = session_file.stat().st_size if session_exists else 0
+    if session_exists and session_size > rotation_bytes:
+        old_size_kb = session_size / 1024
         ts = int(time.time())
         rotated = session_file.with_suffix(f".{ts}.jsonl.bak")
         while rotated.exists():
@@ -376,6 +449,12 @@ async def _run_agent_cli(cli: str, agent_name: str, prompt: str, session_name: s
                          is_retry: bool = False, max_turns: int = 0,
                          model_override: str | None = None) -> tuple[str | None, str]:
     """Execute Claude CLI for an agent. Retries with fresh session on stale resume."""
+    # Quick credential check before expensive CLI call
+    preflight_err = await _llm_preflight_check()
+    if preflight_err:
+        logger.error(f"Agent [{agent_name}] preflight failed: {preflight_err}")
+        return None, session_uuid
+
     cmd = [cli, "--bare", "--agent", agent_name]
     if should_resume:
         cmd += ["--resume", session_uuid]

@@ -19,17 +19,16 @@ from config import (
 from services.task_tracker import (
     _insight_status, _insight_status_lock,
 )
-from services.claude_cli import _find_claude_cli, _track_usage, _call_agent, _build_cli_env, _parse_stream_json, _get_model_override
+from services.claude_cli import _find_claude_cli, _track_usage, _call_agent, _build_cli_env, _parse_stream_json, _get_model_override, _llm_preflight_check
 from services.coach_preamble import _build_coach_preamble
 from services.weather import _format_weather, _get_first_gps, _fetch_external_weather, _format_external_weather
 from data_processing import (
     _safe_float, _classify_type, _enrich_workouts, _workout_distance, _load_summary,
-    _load_workout_timeseries, _compute_sections, _find_workout_file,
-    _load_recovery_data, _load_daily_aggregates, _load_body_metrics,
+    _compute_sections, _find_workout_file,
     _workout_csv_filename, _build_workout_data_summary,
     _build_recovery_sleep_context, _load_nutrition_window, _load_nutrition_settings,
-    _compute_trimp, _detect_brick_sessions, _merge_nearby_workouts,
-    _compute_recovery_timeline, _recovery_label, _meal_relevant_to_workout,
+    _detect_brick_sessions, _merge_nearby_workouts,
+    _meal_relevant_to_workout,
 )
 from routes.deps import _user_data_dir
 
@@ -179,8 +178,6 @@ def _build_workout_prompt(w: dict, plans: list, preamble: str = "") -> str:
 
 def _build_nutrition_prompt(w: dict, nutrition_entries: list) -> str:
     """Build prompt for nutrition coach analysis with meals categorized by timing."""
-    from data_processing.nutrition_helpers import _load_nutrition_window
-
     w_start_str = w.get("startDate", "")
     dur_min = float(w.get("duration_min", 0) or 0)
     lines = [
@@ -431,7 +428,6 @@ def _build_specialist_prompt(w: dict, sections: dict, plans: list, preamble: str
     wnum = int(w.get("workout_num", 0))
     variable_effort = has_intervals
     if data_dir:
-        from data_processing import _find_workout_file
         csv_file = _find_workout_file(wnum, ".csv", data_dir)
         splits_file = _find_workout_file(wnum, ".splits.json", data_dir)
         events_file = _find_workout_file(wnum, ".events.json", data_dir) if disc == "swim" else None
@@ -474,8 +470,8 @@ def _build_specialist_prompt(w: dict, sections: dict, plans: list, preamble: str
 
     # Include raw time-series data when explicitly requested by athlete
     if include_raw_data and data_dir:
-        from data_processing import _find_workout_file
-        csv_file = _find_workout_file(wnum, ".csv", data_dir)
+        if not csv_file:
+            csv_file = _find_workout_file(wnum, ".csv", data_dir)
         if csv_file and csv_file.exists():
             try:
                 with open(csv_file, newline="") as f:
@@ -574,11 +570,22 @@ def _build_synthesis_prompt(w: dict, specialist_analysis: str, plans: list, prea
 
 def _build_general_prompt(workouts: list, race_info: dict, preamble: str = "") -> str:
     """Build prompt for general training insights across recent workouts."""
-    # Group by week
+    # Group by week and compute totals per discipline in a single pass
     weeks = defaultdict(lambda: {"swim": 0, "bike": 0, "run": 0, "strength": 0,
                                   "swim_km": 0, "bike_km": 0, "run_km": 0, "count": 0})
+    disc_totals = {}
     for w in workouts:
         start = w.get("startDate", "")[:10]
+        disc = _classify_type(w.get("type", ""))
+        dur = _safe_float(w.get("duration_min"))
+        dist = _workout_distance(w)
+
+        if disc not in disc_totals:
+            disc_totals[disc] = {"count": 0, "min": 0, "km": 0}
+        disc_totals[disc]["count"] += 1
+        disc_totals[disc]["min"] += dur
+        disc_totals[disc]["km"] += dist
+
         if not start:
             continue
         try:
@@ -587,9 +594,6 @@ def _build_general_prompt(workouts: list, race_info: dict, preamble: str = "") -
             continue
         yr, wk, _ = dt.isocalendar()
         key = f"{yr}-W{wk:02d}"
-        disc = _classify_type(w.get("type", ""))
-        dur = _safe_float(w.get("duration_min"))
-        dist = _workout_distance(w)
         weeks[key][disc] = weeks[key].get(disc, 0) + dur
         if disc in ("swim", "bike", "run"):
             weeks[key][f"{disc}_km"] += dist
@@ -605,16 +609,6 @@ def _build_general_prompt(workouts: list, race_info: dict, preamble: str = "") -
                 km_str = f" {km:.1f}km" if km > 0 else ""
                 parts.append(f"{disc} {d[disc]:.0f}min{km_str}")
         week_summary.append(f"{wk}: {d['count']} sessions — {', '.join(parts)}")
-
-    # Compute totals per discipline
-    disc_totals = {}
-    for w in workouts:
-        disc = _classify_type(w.get("type", ""))
-        if disc not in disc_totals:
-            disc_totals[disc] = {"count": 0, "min": 0, "km": 0}
-        disc_totals[disc]["count"] += 1
-        disc_totals[disc]["min"] += _safe_float(w.get("duration_min"))
-        disc_totals[disc]["km"] += _workout_distance(w)
 
     totals_str = "\n".join(
         f"- {d.upper()}: {v['count']} sessions, {v['min']:.0f} min, {v['km']:.1f} km"
@@ -671,6 +665,11 @@ async def _call_claude_for_insight(prompt: str, allowed_tools: list[str] | None 
     cli = _find_claude_cli()
     if not cli:
         logger.error("Claude CLI not found — cannot generate insight")
+        return None
+    # Preflight check (cached — near-zero cost if recently verified)
+    preflight_err = await _llm_preflight_check()
+    if preflight_err:
+        logger.error(f"Insight call skipped — preflight failed: {preflight_err}")
         return None
     cmd = [cli, "--bare", "-p", prompt, "--output-format", "stream-json", "--verbose", "--no-session-persistence"]
     if allowed_tools:
@@ -1273,15 +1272,14 @@ async def _maybe_regenerate_insight_for_date(date_str: str, meal_data: dict = No
         if not ns["regen_enabled"]:
             logger.debug(f"Nutrition insight regen disabled by setting, skipping for {date_str}")
             return
-        workouts = _enrich_workouts(_load_summary(_user_data_dir(user_id)))
+        dd = _user_data_dir(user_id)
+        workouts = _enrich_workouts(_load_summary(dd))
         day_workouts = [
             w for w in workouts
             if w.get("startDate", "")[:10] == date_str
         ]
         if not day_workouts:
             return
-
-        dd = _user_data_dir(user_id)
         bricks = _detect_brick_sessions(workouts)
         reason_str = "relevant nutrition data was added/updated after the original insight was generated"
 
@@ -1463,47 +1461,39 @@ async def _extract_and_save_nutrition_from_notes(user_note: str, wdate: str, use
     if not parsed:
         return []
 
-    # Load existing nutrition for this date to avoid duplicates
+    # Load existing nutrition and save new meals in a single connection
     conn = await db.get_db()
     try:
         existing = await db.nutrition_get_day(conn, wdate, user_id=user_id)
+        existing_descs = {(m.get("meal_type", ""), m.get("description", "").lower().strip()) for m in existing}
+
+        new_ids = []
+        for meal in parsed:
+            desc = (meal.get("description") or "").strip()
+            mtype = meal.get("meal_type", "snack")
+            if (mtype, desc.lower()) in existing_descs:
+                logger.debug(f"Skipping duplicate nutrition: {mtype} / {desc}")
+                continue
+            items = meal.get("items", [])
+            notes_json = json.dumps(items, ensure_ascii=False) if items else "[]"
+            data = {
+                "date": wdate,
+                "meal_time": meal.get("meal_time", ""),
+                "meal_type": mtype,
+                "description": desc,
+                "calories": meal.get("calories", 0),
+                "protein_g": meal.get("protein_g", 0),
+                "carbs_g": meal.get("carbs_g", 0),
+                "fat_g": meal.get("fat_g", 0),
+                "hydration_ml": meal.get("hydration_ml", 0),
+                "notes": notes_json,
+                "created_at": datetime.now(tz=timezone.utc).isoformat(),
+            }
+            new_id = await db.nutrition_create(conn, data, user_id=user_id)
+            new_ids.append(new_id)
+            logger.info(f"Saved nutrition from notes: {data['meal_type']} / {data['description']} (id={new_id}) for {wdate}")
     finally:
         await conn.close()
-    existing_descs = {(m.get("meal_type", ""), m.get("description", "").lower().strip()) for m in existing}
-
-    new_ids = []
-    meals_to_save = []
-    for meal in parsed:
-        desc = (meal.get("description") or "").strip()
-        mtype = meal.get("meal_type", "snack")
-        if (mtype, desc.lower()) in existing_descs:
-            logger.debug(f"Skipping duplicate nutrition: {mtype} / {desc}")
-            continue
-        items = meal.get("items", [])
-        notes_json = json.dumps(items, ensure_ascii=False) if items else "[]"
-        meals_to_save.append({
-            "date": wdate,
-            "meal_time": meal.get("meal_time", ""),
-            "meal_type": mtype,
-            "description": desc,
-            "calories": meal.get("calories", 0),
-            "protein_g": meal.get("protein_g", 0),
-            "carbs_g": meal.get("carbs_g", 0),
-            "fat_g": meal.get("fat_g", 0),
-            "hydration_ml": meal.get("hydration_ml", 0),
-            "notes": notes_json,
-            "created_at": datetime.now(tz=timezone.utc).isoformat(),
-        })
-
-    if meals_to_save:
-        conn = await db.get_db()
-        try:
-            for data in meals_to_save:
-                new_id = await db.nutrition_create(conn, data, user_id=user_id)
-                new_ids.append(new_id)
-                logger.info(f"Saved nutrition from notes: {data['meal_type']} / {data['description']} (id={new_id}) for {wdate}")
-        finally:
-            await conn.close()
 
     return new_ids
 
