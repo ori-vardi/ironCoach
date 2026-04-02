@@ -319,7 +319,7 @@ async def _handle_chat_message(websocket: WebSocket, data: dict, ws_user_id: int
         # Specialist agents: direct tool access, no delegation
         allowed_tools = "Read,Grep,Bash"
     # Deny destructive commands — agents must not delete/modify files outside project scope
-    disallowed_tools = "Bash(rm *),Bash(rm -rf *),Bash(rmdir *),Bash(mv *)"
+    disallowed_tools = "Bash(rm *),Bash(rm -rf *),Bash(rmdir *),Bash(mv *),Bash(git rm *),Bash(git rm -rf *)"
 
     bare_flag = ["--bare"] if chat_mode != "dev" else []
 

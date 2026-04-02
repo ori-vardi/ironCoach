@@ -228,25 +228,29 @@ export default function PostImportModal({ workouts, datesWithNutrition = [], mer
     }
   }
 
+  function doSkip() {
+    dismissWorkouts(allWorkouts.map(w => w.workout_num))
+    fetch('/api/insights/notifications', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: 'Insight Generation', detail: `Skipped (${allWorkouts.length} workouts)`, status: 'cancelled', link: '/insights' }),
+    }).then(() => window.dispatchEvent(new CustomEvent('notification-poll-now'))).catch(() => {})
+    onClose()
+  }
+
   function handleSkip() {
-    if (confirmSkip) {
-      // Dismiss all shown workouts so they don't appear next import
-      dismissWorkouts(allWorkouts.map(w => w.workout_num))
-      // Save "skipped" notification
-      fetch('/api/insights/notifications', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ label: 'Insight Generation', detail: `Skipped (${allWorkouts.length} workouts)`, status: 'cancelled', link: '/insights' }),
-      }).then(() => window.dispatchEvent(new CustomEvent('notification-poll-now'))).catch(() => {})
-      onClose()
+    // No double-confirm when AI is off — nothing to lose
+    if (!aiEnabled || confirmSkip) {
+      doSkip()
     } else {
       setConfirmSkip(true)
     }
   }
 
-  // Close modal without action (ESC/X) — save for reopen, don't dismiss workouts
+  // Close modal (ESC/X) — if user already saw skip warning, just close fully
   function handleDismiss() {
     if (previewNum) return // Don't close when preview modal is open
+    if (confirmSkip) { doSkip(); return }
     if (onDismiss) onDismiss()
     else onClose()
   }

@@ -88,8 +88,16 @@ export default function Layout() {
   useEffect(() => {
     const load = () => api('/api/import/pending').then(d => setPendingImport(d || null)).catch(() => {})
     const loadAndOpen = () => api('/api/import/pending').then(d => {
-      if (d) { setPendingImport({ ...d, _open: true }); refreshWorkouts() }
-      else setPendingImport(null)
+      if (!d) { setPendingImport(null); return }
+      // Skip modal when AI is off and only workouts (no merges/bricks to act on)
+      const hasActionable = d.mergeCandidates?.length > 0 || d.brickSessions?.length > 0
+      if (!aiEnabled && !hasActionable) {
+        api('/api/import/pending', { method: 'DELETE' }).catch(() => {})
+        setPendingImport(null)
+        refreshWorkouts()
+        return
+      }
+      setPendingImport({ ...d, _open: true }); refreshWorkouts()
     }).catch(() => {})
     load()
     // pending-import-changed: auto-open modal (new import arrived)
