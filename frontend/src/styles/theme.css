@@ -3583,7 +3583,7 @@ textarea { resize: vertical; min-height: 60px; text-align: start; }
 .overview-ring .kpi-label .text-sm { font-size: 8.5px; }
 .overview-ring .kpi-fill-bar { border-radius: 0 0 50% 50%; }
 .overview-ring .kpi-info-corner { top: auto; bottom: 10px; right: auto; left: 50%; transform: translateX(-50%); opacity: 0.7; }
-.overview-ring .kpi-info-corner .info-tip-icon { width: 14px; height: 14px; font-size: 9px; background: rgba(15,17,23,0.8); border-color: rgba(200,211,245,0.6); color: rgba(200,211,245,0.8); }
+.overview-ring .kpi-info-corner .info-tip-icon { width: 18px; height: 18px; font-size: 11px; background: rgba(15,17,23,0.8); border-color: rgba(200,211,245,0.6); color: rgba(200,211,245,0.8); }
 .overview-ring .kpi-card:hover .kpi-info-corner { opacity: 1; }
 .overview-ring .kpi-card:hover .kpi-info-corner .info-tip-icon { border-color: var(--accent); color: var(--accent); }
 /* Legacy recovery-hero kept for Recovery page */

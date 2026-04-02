@@ -1,5 +1,5 @@
 import { NavLink, Outlet, Link } from 'react-router-dom'
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useChat } from '../context/ChatContext'
 import { useApp } from '../context/AppContext'
@@ -71,10 +71,10 @@ export default function Layout() {
   }, [aiEnabled])
 
   useEffect(() => {
-    api('/api/race').then(r => { if (r?.event_type) setPrimaryEvent(r) }).catch(() => {})
-    const onUpdate = () => api('/api/race').then(r => { if (r?.event_type) setPrimaryEvent(r) }).catch(() => {})
-    window.addEventListener('coach-data-update', onUpdate)
-    return () => window.removeEventListener('coach-data-update', onUpdate)
+    const loadRace = () => api('/api/race').then(r => { if (r?.event_type) setPrimaryEvent(r) }).catch(() => {})
+    loadRace()
+    window.addEventListener('coach-data-update', loadRace)
+    return () => window.removeEventListener('coach-data-update', loadRace)
   }, [])
 
   // Listen for open-workout-detail events (from notification bell clicks)
@@ -112,13 +112,13 @@ export default function Layout() {
 
   // Nav ordering
   const [navOrder, setNavOrder] = useState(() => loadNavOrder())
-  const navItems = useMemo(() => getOrderedNav(navOrder), [navOrder])
+  const navItems = getOrderedNav(navOrder)
 
-  const toggleChatMode = useCallback((targetMode) => {
+  function toggleChatMode(targetMode) {
     if (!aiEnabled) return
     if (chatMode !== targetMode) setChatMode(targetMode)
     setChatOpen(o => chatMode === targetMode ? !o : true)
-  }, [chatMode, setChatMode, setChatOpen, aiEnabled])
+  }
 
   // ESC closes chat
   useEffect(() => {
@@ -138,25 +138,25 @@ export default function Layout() {
   const dragIdx = useRef(null)
   const [dragOverIdx, setDragOverIdx] = useState(null)
 
-  const handleDragStart = useCallback((e, idx) => {
+  function handleDragStart(e, idx) {
     dragIdx.current = idx
     e.dataTransfer.effectAllowed = 'move'
     e.currentTarget.classList.add('nav-dragging')
-  }, [])
+  }
 
-  const handleDragEnd = useCallback((e) => {
+  function handleDragEnd(e) {
     e.currentTarget.classList.remove('nav-dragging')
     setDragOverIdx(null)
     dragIdx.current = null
-  }, [])
+  }
 
-  const handleDragOver = useCallback((e, idx) => {
+  function handleDragOver(e, idx) {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     setDragOverIdx(idx)
-  }, [])
+  }
 
-  const handleDrop = useCallback((e, dropIdx) => {
+  function handleDrop(e, dropIdx) {
     e.preventDefault()
     setDragOverIdx(null)
     const fromIdx = dragIdx.current
@@ -168,7 +168,7 @@ export default function Layout() {
     setNavOrder(paths)
     localStorage.setItem(NAV_ORDER_KEY, JSON.stringify(paths))
     dragIdx.current = null
-  }, [navItems])
+  }
 
   return (
     <>

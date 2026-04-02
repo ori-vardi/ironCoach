@@ -11,9 +11,23 @@ from pathlib import Path
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 MAX_FILE_CHARS = 50000
+CHAT_HISTORY_LIMIT = 10
+CHAT_CONTENT_PREVIEW_CHARS = 500
 
 SUBPROCESS_LINE_BUFFER = 10 * 1024 * 1024  # 10MB
 CHAT_STALE_TIMEOUT_SEC = 7200  # 2 hours
+
+_BACKEND_DIR = Path(__file__).parent.parent
+_UPLOAD_DIR = (_BACKEND_DIR / "data" / "uploads").resolve()
+_TRAINING_DATA_DIR = (_BACKEND_DIR.parent / "training_data").resolve()
+_ALLOWED_PARENTS = (_UPLOAD_DIR, _TRAINING_DATA_DIR)
+
+IMAGE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic"})
+TEXT_SUFFIXES = frozenset({
+    ".csv", ".txt", ".md", ".json", ".py", ".js", ".html", ".css",
+    ".xml", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".log", ".tsv",
+    ".sh", ".bash", ".zsh", ".sql", ".gpx", ".env",
+})
 
 import database as db
 from config import (
@@ -49,6 +63,12 @@ def _detect_lang(text: str) -> str:
 
 
 # ── File Reading Utilities ───────────────────────────────────────────────────
+
+def _truncate(content: str, max_chars: int) -> str:
+    if len(content) <= max_chars:
+        return content
+    return content[:max_chars] + f"\n... [truncated — {len(content)} chars, showing first {max_chars}]"
+
 
 def _read_docx(file_path: Path) -> str:
     """Extract text from a .docx file using built-in zipfile + XML parsing."""
@@ -90,10 +110,7 @@ def _read_attached_file(file_path: str, max_chars: int = MAX_FILE_CHARS) -> tupl
     name = p.name
     # Restrict file access to safe directories (resolve symlinks)
     resolved = p.resolve(strict=False)
-    UPLOAD_DIR_resolved = (Path(__file__).parent.parent / "data" / "uploads").resolve()
-    TRAINING_DATA_resolved = (Path(__file__).parent.parent.parent / "training_data").resolve()
-    allowed_parents = [UPLOAD_DIR_resolved, TRAINING_DATA_resolved]
-    if not any(resolved.is_relative_to(ap) for ap in allowed_parents):
+    if not any(resolved.is_relative_to(ap) for ap in _ALLOWED_PARENTS):
         logger.warning(f"Blocked file access outside allowed dirs: {file_path}")
         return name, f"[Access denied: file outside allowed directories]"
     if not p.exists():
@@ -102,8 +119,6 @@ def _read_attached_file(file_path: str, max_chars: int = MAX_FILE_CHARS) -> tupl
 
     suffix = p.suffix.lower()
 
-    # Images — tell the agent to read them (it has the Read tool which supports images)
-    IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic"}
     if suffix in IMAGE_SUFFIXES:
         size_kb = p.stat().st_size / 1024
         logger.debug(f"Image attached: {name} ({size_kb:.1f} KB) at {file_path}")
@@ -115,8 +130,7 @@ def _read_attached_file(file_path: str, max_chars: int = MAX_FILE_CHARS) -> tupl
             content = _read_docx(p)
             if not content.strip():
                 return name, f"[Empty or unreadable .docx file: {name}]"
-            if len(content) > max_chars:
-                content = content[:max_chars] + f"\n... [truncated — {len(content)} chars, showing first {max_chars}]"
+            content = _truncate(content, max_chars)
             logger.debug(f"Read .docx file: {name} ({len(content)} chars)")
             return name, content
         except Exception as e:
@@ -126,26 +140,16 @@ def _read_attached_file(file_path: str, max_chars: int = MAX_FILE_CHARS) -> tupl
     # PDF
     if suffix == ".pdf":
         try:
-            content = _read_pdf(p)
-            if len(content) > max_chars:
-                content = content[:max_chars] + f"\n... [truncated — {len(content)} chars, showing first {max_chars}]"
+            content = _truncate(_read_pdf(p), max_chars)
             logger.debug(f"Read PDF file: {name} ({len(content)} chars)")
             return name, content
         except Exception as e:
             logger.error(f"Error reading PDF {name}: {e}")
             return name, f"[Error reading PDF: {e}]"
 
-    # Text files
-    TEXT_SUFFIXES = {
-        ".csv", ".txt", ".md", ".json", ".py", ".js", ".html", ".css",
-        ".xml", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".log", ".tsv",
-        ".sh", ".bash", ".zsh", ".sql", ".gpx", ".env",
-    }
     if suffix in TEXT_SUFFIXES:
         try:
-            content = p.read_text(encoding="utf-8", errors="replace")
-            if len(content) > max_chars:
-                content = content[:max_chars] + f"\n... [truncated — {len(content)} chars, showing first {max_chars}]"
+            content = _truncate(p.read_text(encoding="utf-8", errors="replace"), max_chars)
             logger.debug(f"Read text file: {name} ({len(content)} chars)")
             return name, content
         except Exception as e:
@@ -154,9 +158,7 @@ def _read_attached_file(file_path: str, max_chars: int = MAX_FILE_CHARS) -> tupl
 
     # Unknown extension — try reading as text, fall back to binary notice
     try:
-        content = p.read_text(encoding="utf-8", errors="strict")
-        if len(content) > max_chars:
-            content = content[:max_chars] + f"\n... [truncated]"
+        content = _truncate(p.read_text(encoding="utf-8", errors="strict"), max_chars)
         logger.debug(f"Read file as text (unknown ext): {name} ({len(content)} chars)")
         return name, content
     except (UnicodeDecodeError, Exception):
@@ -336,8 +338,8 @@ async def _handle_chat_message(websocket: WebSocket, data: dict, ws_user_id: int
             try:
                 cursor = await conn2.execute(
                     "SELECT role, content FROM chat_history "
-                    "WHERE session_id = ? AND user_id = ? ORDER BY id DESC LIMIT 10",
-                    (session_id, ws_user_id)
+                    "WHERE session_id = ? AND user_id = ? ORDER BY id DESC LIMIT ?",
+                    (session_id, ws_user_id, CHAT_HISTORY_LIMIT)
                 )
                 recent = await cursor.fetchall()
                 # Check chat summary mode setting
@@ -363,7 +365,7 @@ async def _handle_chat_message(websocket: WebSocket, data: dict, ws_user_id: int
                     lines = []
                     for msg in messages:
                         role_label = "User" if msg["role"] == "user" else "Coach"
-                        text = msg["content"][:500]
+                        text = msg["content"][:CHAT_CONTENT_PREVIEW_CHARS]
                         lines.append(f"{role_label}: {text}")
                     history_prefix = (
                         "[PREVIOUS CONVERSATION CONTEXT — this is a fresh CLI session but the user "
@@ -389,8 +391,8 @@ async def _handle_chat_message(websocket: WebSocket, data: dict, ws_user_id: int
                 finally:
                     await conn_am.close()
                 if memories:
-                    mem_lines = [f"- {m['content'][:500]}" for m in memories]
-                    mem_text = "\n".join(mem_lines)[:5000]
+                    mem_lines = [f"- {m['content'][:CHAT_CONTENT_PREVIEW_CHARS]}" for m in memories]
+                    mem_text = "\n".join(mem_lines)[:CHAT_CONTENT_PREVIEW_CHARS * CHAT_HISTORY_LIMIT]
                     history_prefix = f"[AGENT MEMORY for {agent_name}]\n{mem_text}\n\n" + history_prefix
             except Exception as e:
                 logger.warning(f"Could not load agent memory: {e}")

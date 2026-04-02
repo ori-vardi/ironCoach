@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo, Component } from 'react'
+import { useState, useEffect, useRef, Component } from 'react'
 import { api } from '../api'
 import { md, fmtSize, formatCost, formatTokens } from '../utils/formatters'
 import useTableSort from '../utils/useTableSort'
@@ -43,6 +43,29 @@ function toggleUserInSet(setSelectedUsers, uid) {
     next.has(uid) ? next.delete(uid) : next.add(uid)
     return next
   })
+}
+
+function useTranscript() {
+  const [transcript, setTranscript] = useState(null)
+  const [transcriptLoading, setTranscriptLoading] = useState(false)
+  const [viewUuid, setViewUuid] = useState(null)
+
+  async function openTranscript(uuid) {
+    setViewUuid(uuid)
+    setTranscriptLoading(true)
+    try {
+      const data = await api(`/api/sessions/${uuid}/transcript`)
+      setTranscript(Array.isArray(data) ? data : data.messages || [])
+    } catch { setTranscript([]) }
+    setTranscriptLoading(false)
+  }
+
+  function closeTranscript() {
+    setViewUuid(null)
+    setTranscript(null)
+  }
+
+  return { transcript, transcriptLoading, viewUuid, openTranscript, closeTranscript }
 }
 
 const FILE_SIZE_LARGE = 400_000
@@ -122,7 +145,7 @@ function UsersTab() {
   const [error, setError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState(null) // { id, name, isSelf }
 
-  const loadData = useCallback(async () => {
+  async function loadData() {
     try {
       const [userList, usageData] = await Promise.all([
         api('/api/admin/users'),
@@ -137,9 +160,9 @@ function UsersTab() {
       }
     } catch (err) { console.error('Failed to load users:', err) }
     setLoading(false)
-  }, [])
+  }
 
-  useEffect(() => { loadData() }, [loadData])
+  useEffect(() => { loadData() }, [])
 
   async function createUser(e) {
     e.preventDefault()
@@ -706,18 +729,18 @@ function ChatSessionsSub({ users }) {
   const [modalLoading, setModalLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const loadData = useCallback(() => {
+  function loadData() {
     api('/api/admin/chat-sessions')
       .then(sess => setSessions(sess))
       .catch(err => console.error('Failed to load:', err))
       .finally(() => setLoading(false))
-  }, [])
+  }
 
-  useEffect(() => { loadData() }, [loadData])
+  useEffect(() => { loadData() }, [])
   useEffect(() => {
     window.addEventListener('coach-data-update', loadData)
     return () => window.removeEventListener('coach-data-update', loadData)
-  }, [loadData])
+  }, [])
 
   async function deleteSession(sessionId) {
     if (!confirm('Delete this chat session and all its CLI files?')) return
@@ -762,25 +785,9 @@ function ChatSessionsSub({ users }) {
 
   const filtered = selectedUsers.size > 0 ? sessions.filter(s => selectedUsers.has(String(s.user_id))) : sessions
 
-  function renderTranscript(msgs) {
-    if (!msgs || msgs.length === 0) return <p className="text-dim" style={{ padding: 8 }}>{t('admin_no_messages')}</p>
-    return msgs.filter(m => {
-      if (m.role === 'tool') return false
-      if (m.role === 'assistant' && !m.content?.trim()) return false
-      return true
-    }).map((msg, i) => {
-      const cssRole = msg.role === 'user' ? 'user' : msg.role
-      return (
-        <div key={i} className={`transcript-msg ${cssRole}`}>
-          <div className="transcript-role">{msg.role === 'human' ? 'user' : msg.role}</div>
-          <div dir="auto" dangerouslySetInnerHTML={md(msg.content)} />
-        </div>
-      )
-    })
-  }
-
-  // Modal title
-  const modalTitle = viewModal?.type === 'chat' ? t('admin_chat_messages') : viewModal?.type === 'cli' ? t('admin_cli_current') : t('admin_cli_rotated')
+  let modalTitle = t('admin_cli_rotated')
+  if (viewModal?.type === 'chat') modalTitle = t('admin_chat_messages')
+  else if (viewModal?.type === 'cli') modalTitle = t('admin_cli_current')
 
   return (
     <>
@@ -892,7 +899,7 @@ function ChatSessionsSub({ users }) {
               </div>
             )}
             <div className="transcript" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
-              {modalLoading ? <LoadingSpinner /> : renderTranscript(modalData)}
+              {modalLoading ? <LoadingSpinner /> : <TranscriptMessages messages={modalData} t={t} />}
             </div>
           </div>
         )}
@@ -907,44 +914,30 @@ function CoachingSessionsSub({ users }) {
   const [loading, setLoading] = useState(true)
   const [selectedUsers, setSelectedUsers] = useState(new Set())
   const [filterAgent, setFilterAgent] = useState('')
-  const [transcript, setTranscript] = useState(null)
-  const [transcriptLoading, setTranscriptLoading] = useState(false)
-  const [viewUuid, setViewUuid] = useState(null)
+  const { transcript, transcriptLoading, viewUuid, openTranscript, closeTranscript } = useTranscript()
 
-  const loadData = useCallback(() => {
+  function loadData() {
     api('/api/sessions')
       .then(sess => setSessions(sess.filter(s => COACHING_AGENTS.has(s.agent_name))))
       .catch(err => console.error('Failed to load:', err))
       .finally(() => setLoading(false))
-  }, [])
+  }
 
-  useEffect(() => { loadData() }, [loadData])
+  useEffect(() => { loadData() }, [])
 
   useEffect(() => {
     window.addEventListener('coach-data-update', loadData)
     return () => window.removeEventListener('coach-data-update', loadData)
-  }, [loadData])
+  }, [])
 
-
-  async function openTranscript(uuid) {
-    setViewUuid(uuid)
-    setTranscriptLoading(true)
-    try {
-      const data = await api(`/api/sessions/${uuid}/transcript`)
-      setTranscript(Array.isArray(data) ? data : data.messages || [])
-    } catch { setTranscript([]) }
-    setTranscriptLoading(false)
-  }
-
-  // Hooks must be called unconditionally (before any early return)
-  const sortCols = useMemo(() => ({
+  const sortCols = {
     user: s => (users[s.user_id] || '').toLowerCase(),
     agent: s => s.agent_name || '',
     context: s => s.context_key || s.agent_name || '',
     msgs: s => s.message_count || 0,
     size: s => s.file_size || 0,
     date: s => s.last_used_at || s.created_at || '',
-  }), [users])
+  }
 
   let filtered = sessions
   if (selectedUsers.size > 0) filtered = filtered.filter(s => selectedUsers.has(String(s.user_id)))
@@ -1013,7 +1006,7 @@ function CoachingSessionsSub({ users }) {
         )}
       </div>
 
-      <TranscriptModal viewUuid={viewUuid} transcript={transcript} transcriptLoading={transcriptLoading} onClose={() => { setViewUuid(null); setTranscript(null) }} />
+      <TranscriptModal viewUuid={viewUuid} transcript={transcript} transcriptLoading={transcriptLoading} onClose={closeTranscript} />
     </>
   )
 }
@@ -1157,17 +1150,15 @@ function CliSessionsTab() {
   const { t } = useI18n()
   const [sessions, setSessions] = useState([])
   const [loading, setLoading] = useState(true)
-  const [transcript, setTranscript] = useState(null)
-  const [transcriptLoading, setTranscriptLoading] = useState(false)
-  const [viewUuid, setViewUuid] = useState(null)
   const [error, setError] = useState('')
+  const { transcript, transcriptLoading, viewUuid, openTranscript, closeTranscript } = useTranscript()
 
-  const sortCols = useMemo(() => ({
+  const sortCols = {
     name: s => (s.slug || s.context_key || s.session_uuid || '').toLowerCase(),
     msgs: s => s.message_count || 0,
     size: s => s.file_size || 0,
     date: s => s.last_used_at || s.created_at || '',
-  }), [])
+  }
 
   useEffect(() => {
     api('/api/sessions')
@@ -1176,16 +1167,6 @@ function CliSessionsTab() {
   }, [])
 
   const { sorted, handleSort, sortArrow } = useTableSort(sessions, sortCols, 'date', 'desc')
-
-  async function openTranscript(uuid) {
-    setViewUuid(uuid)
-    setTranscriptLoading(true)
-    try {
-      const data = await api(`/api/sessions/${uuid}/transcript`)
-      setTranscript(Array.isArray(data) ? data : data.messages || [])
-    } catch { setTranscript([]) }
-    setTranscriptLoading(false)
-  }
 
   async function deleteSession(uuid) {
     if (!confirm('Delete this CLI session?')) return
@@ -1255,7 +1236,7 @@ function CliSessionsTab() {
         </div>
       )}
 
-      <TranscriptModal viewUuid={viewUuid} transcript={transcript} transcriptLoading={transcriptLoading} onClose={() => { setViewUuid(null); setTranscript(null) }} />
+      <TranscriptModal viewUuid={viewUuid} transcript={transcript} transcriptLoading={transcriptLoading} onClose={closeTranscript} />
     </>
   )
 }
@@ -1273,11 +1254,11 @@ function LogsTab() {
   const viewerRef = useRef(null)
   const tailRef = useRef(null)
 
-  const loadList = useCallback(() => {
+  function loadList() {
     api('/api/admin/logfiles').then(d => setData(d)).catch(err => console.error('Failed to load logs:', err)).finally(() => setLoading(false))
-  }, [])
+  }
 
-  useEffect(() => { loadList() }, [loadList])
+  useEffect(() => { loadList() }, [])
 
   async function openFile(name) {
     setViewFile(name)
@@ -1388,34 +1369,38 @@ function LogsTab() {
 }
 
 /* ─── Shared Transcript Modal ─── */
+function TranscriptMessages({ messages, t }) {
+  if (!messages || messages.length === 0) return <p className="text-dim">{t('admin_no_messages')}</p>
+  return messages.filter(m => {
+    if (m.role === 'tool') return false
+    if (m.role === 'assistant') {
+      if (typeof m.content === 'string' && !m.content.trim()) return false
+      if (Array.isArray(m.content) && m.content.length === 0) return false
+    }
+    return true
+  }).map((msg, i) => {
+    const role = msg.role || 'system'
+    const cssRole = role === 'human' ? 'user' : role
+    let text = typeof msg.content === 'string' ? msg.content
+      : Array.isArray(msg.content) ? msg.content.filter(b => b.type === 'text').map(b => b.text).join('\n')
+      : JSON.stringify(msg.content, null, 2)
+    if (!text.trim()) return null
+    return (
+      <div key={i} className={`transcript-msg ${cssRole}`}>
+        <div className="transcript-role">{role === 'human' ? 'user' : role}</div>
+        <div dir="auto" dangerouslySetInnerHTML={md(text)} />
+      </div>
+    )
+  })
+}
+
 function TranscriptModal({ viewUuid, transcript, transcriptLoading, onClose }) {
   const { t } = useI18n()
   return (
     <Modal open={viewUuid != null} onClose={onClose} title={t('admin_session_transcript')} wide>
       {transcriptLoading ? <LoadingSpinner /> : (
         <div className="transcript" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
-          {(!transcript || transcript.length === 0) && <p className="text-dim">{t('admin_no_messages')}</p>}
-          {transcript?.filter(m => {
-            if (m.role === 'tool') return false
-            if (m.role === 'assistant') {
-              if (typeof m.content === 'string' && !m.content.trim()) return false
-              if (Array.isArray(m.content) && m.content.length === 0) return false
-            }
-            return true
-          }).map((msg, i) => {
-            const role = msg.role || 'system'
-            const cssRole = role === 'human' ? 'user' : role
-            let text = typeof msg.content === 'string' ? msg.content
-              : Array.isArray(msg.content) ? msg.content.filter(b => b.type === 'text').map(b => b.text).join('\n')
-              : JSON.stringify(msg.content, null, 2)
-            if (!text.trim()) return null
-            return (
-              <div key={i} className={`transcript-msg ${cssRole}`}>
-                <div className="transcript-role">{role === 'human' ? 'user' : role}</div>
-                <div dir="auto" dangerouslySetInnerHTML={md(text)} />
-              </div>
-            )
-          })}
+          <TranscriptMessages messages={transcript} t={t} />
         </div>
       )}
     </Modal>

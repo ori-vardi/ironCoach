@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { api } from '../api'
 import { useI18n } from '../i18n/I18nContext'
 import Modal from './common/Modal'
@@ -46,13 +46,11 @@ export default function PostImportModal({ workouts, datesWithNutrition = [], mer
 
   // Combine original workouts with workouts created from merges (deduped by workout_num)
   // consumedNums = workout_b numbers absorbed into workout_a — removed entirely
-  const allWorkouts = useMemo(() => {
-    const mergedNums = new Set(mergedWorkouts.map(w => w.workout_num))
-    return [
-      ...workouts.filter(w => !mergedNums.has(w.workout_num) && !consumedNums.has(w.workout_num)),
-      ...mergedWorkouts,
-    ]
-  }, [workouts, mergedWorkouts, consumedNums])
+  const mergedNums = new Set(mergedWorkouts.map(w => w.workout_num))
+  const allWorkouts = [
+    ...workouts.filter(w => !mergedNums.has(w.workout_num) && !consumedNums.has(w.workout_num)),
+    ...mergedWorkouts,
+  ]
 
   const selectedCount = Object.values(selected).filter(Boolean).length
   const allSelected = allWorkouts.length > 0 && selectedCount === allWorkouts.length
@@ -211,13 +209,10 @@ export default function PostImportModal({ workouts, datesWithNutrition = [], mer
   }
 
   // Estimated cost: ~$0.03 per workout (3 agent calls avg)
-  const estimatedCost = useMemo(() => (selectedCount * 0.03).toFixed(2), [selectedCount])
+  const estimatedCost = (selectedCount * 0.03).toFixed(2)
 
-  // Check which workout dates are missing nutrition data
-  const datesWithoutNutrition = useMemo(() => {
-    const nutritionSet = new Set(datesWithNutrition)
-    return [...new Set(allWorkouts.map(w => w.date))].filter(d => !nutritionSet.has(d))
-  }, [datesWithNutrition, allWorkouts])
+  const nutritionSet = new Set(datesWithNutrition)
+  const datesWithoutNutrition = [...new Set(allWorkouts.map(w => w.date))].filter(d => !nutritionSet.has(d))
 
   function dismissWorkouts(nums) {
     if (nums.length > 0) {
