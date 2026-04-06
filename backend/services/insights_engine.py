@@ -705,7 +705,7 @@ async def _call_claude_for_insight(prompt: str, allowed_tools: list[str] | None 
         elapsed = time.time() - start
         if proc.returncode == 0:
             text, result_event = _parse_stream_json(stdout.decode("utf-8", errors="replace"))
-            logger.info(f"Claude CLI success ({elapsed:.1f}s, {len(text)} chars)")
+            logger.debug(f"Claude CLI success ({elapsed:.1f}s, {len(text)} chars)")
             if result_event:
                 asyncio.create_task(_track_usage(result_event, "insight", user_id=user_id))
             return text
@@ -1027,7 +1027,7 @@ async def _generate_insights_batch(since_date: str, to_date: str = "", user_id: 
                     nutrition_wnums.append(wnum)
         skipped = len(all_wnums) - len(nutrition_wnums)
         if skipped:
-            logger.info(f"Nutrition coach: skipping {skipped} workouts (no nutrition data or food notes)")
+            logger.debug(f"Nutrition coach: skipping {skipped} workouts (no nutrition data or food notes)")
             for wnum in all_wnums:
                 if wnum not in nutrition_wnums:
                     nutrition_results[wnum] = ""
@@ -1142,7 +1142,7 @@ async def _generate_insights_batch(since_date: str, to_date: str = "", user_id: 
                 )
 
                 _insight_status["current"] = f"Brick #{'/'.join(str(n) for n in brick_nums)} → main-coach synthesis"
-                result_text, _ = await _call_agent("main-coach", synthesis_prompt, f"main-coach-synthesis-user{user_id}", max_turns=1, user_id=user_id)
+                result_text, _ = await _call_agent("main-coach", synthesis_prompt, f"main-coach-synthesis-user{user_id}", max_turns=3, user_id=user_id)
 
                 if result_text:
                     result_text, plan_cmp = _split_plan_comparison(result_text)
@@ -1491,7 +1491,7 @@ async def _extract_and_save_nutrition_from_notes(user_note: str, wdate: str, use
             }
             new_id = await db.nutrition_create(conn, data, user_id=user_id)
             new_ids.append(new_id)
-            logger.info(f"Saved nutrition from notes: {data['meal_type']} / {data['description']} (id={new_id}) for {wdate}")
+            logger.debug(f"Saved nutrition from notes: {data['meal_type']} / {data['description']} (id={new_id}) for {wdate}")
     finally:
         await conn.close()
 
@@ -1515,7 +1515,7 @@ async def _generate_insight_for_workout(w: dict, plans: list, data_dir: Path = N
     if user_note:
         saved_ids = await _extract_and_save_nutrition_from_notes(user_note, wdate, user_id=user_id)
         if saved_ids:
-            logger.info(f"Extracted {len(saved_ids)} meal(s) from notes for workout #{wnum} on {wdate}")
+            logger.debug(f"Extracted {len(saved_ids)} meal(s) from notes for workout #{wnum} on {wdate}")
 
     preamble = await _build_coach_preamble(user_id, lang=lang)
     merged_nums = w.get("merged_nums")
@@ -1523,7 +1523,7 @@ async def _generate_insight_for_workout(w: dict, plans: list, data_dir: Path = N
 
     # Build workout data for specialists
     if include_raw_data:
-        logger.info(f"Workout #{wnum}: including raw CSV data in specialist prompt (athlete requested)")
+        logger.debug(f"Workout #{wnum}: including raw CSV data in specialist prompt (athlete requested)")
     if sections and sections["sections"]:
         specialist_data = _build_specialist_prompt(w, sections, plans, preamble, data_dir=data_dir, include_raw_data=include_raw_data)
     else:
@@ -1860,7 +1860,7 @@ async def _generate_brick_insight(brick_workouts: list[dict], plans_map: dict, d
 
     wnums = [int(bw.get("workout_num", 0)) for bw in sorted_bw]
     synthesis_session = f"insight-synthesis-brick-{'-'.join(str(n) for n in wnums)}-user{user_id}"
-    synthesis_text, _ = await _call_agent("main-coach", synthesis_input, synthesis_session, max_turns=1, user_id=user_id)
+    synthesis_text, _ = await _call_agent("main-coach", synthesis_input, synthesis_session, max_turns=3, user_id=user_id)
 
     if not synthesis_text:
         synthesis_text = specialist_outputs[0][1]

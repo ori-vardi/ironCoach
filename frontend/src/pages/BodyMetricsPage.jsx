@@ -363,10 +363,20 @@ export default function BodyMetricsPage() {
   const lmColor = rangeColor(latest.LeanBodyMass, ranges.leanMass)
   const bmiColor = rangeColor(latest.BodyMassIndex, ranges.bmi)
 
-  const chartLayout = (title, yTitle, shapes = []) => ({
+  function tightYRange(values) {
+    const valid = values.filter(v => v != null)
+    if (!valid.length) return undefined
+    const lo = Math.min(...valid)
+    const hi = Math.max(...valid)
+    const span = hi - lo
+    const pad = Math.max(span * 0.15, 0.5)
+    return [Math.floor((lo - pad) * 2) / 2, Math.ceil((hi + pad) * 2) / 2]
+  }
+
+  const chartLayout = (title, yTitle, shapes = [], yRange) => ({
     ...PLOTLY_LAYOUT,
     title: { text: title, font: { size: 14, color: '#c8d3f5' } },
-    yaxis: { ...PLOTLY_LAYOUT.yaxis, title: yTitle },
+    yaxis: { ...PLOTLY_LAYOUT.yaxis, title: yTitle, dtick: 0.5, ...(yRange ? { range: yRange } : {}) },
     xaxis: { ...PLOTLY_LAYOUT.xaxis },
     margin: { ...PLOTLY_LAYOUT.margin, t: 40 },
     shapes,
@@ -464,7 +474,7 @@ export default function BodyMetricsPage() {
           </div>
           <Plot
             data={[trace(weight, 'Weight', '#ff966c')]}
-            layout={chartLayout('', 'kg', weightShapes)}
+            layout={chartLayout('', 'kg', weightShapes, tightYRange(weight))}
             config={PLOTLY_CONFIG}
             useResizeHandler style={{ width: '100%', height: 280 }}
           />
@@ -476,7 +486,7 @@ export default function BodyMetricsPage() {
           </div>
           <Plot
             data={[trace(fat, 'Body Fat %', '#c099ff')]}
-            layout={chartLayout('', '%', fatShapes)}
+            layout={chartLayout('', '%', fatShapes, tightYRange(fat))}
             config={PLOTLY_CONFIG}
             useResizeHandler style={{ width: '100%', height: 280 }}
           />
@@ -489,7 +499,7 @@ export default function BodyMetricsPage() {
             </div>
             <Plot
               data={[trace(muscle, 'Muscle Mass', '#c3e88d')]}
-              layout={chartLayout('', 'kg', muscleShapes)}
+              layout={chartLayout('', 'kg', muscleShapes, tightYRange(muscle))}
               config={PLOTLY_CONFIG}
               useResizeHandler style={{ width: '100%', height: 280 }}
             />
@@ -503,7 +513,7 @@ export default function BodyMetricsPage() {
             </div>
             <Plot
               data={[trace(muscleRate, 'Muscle Rate', '#ffc777')]}
-              layout={chartLayout('', '%', muscleRateShapes)}
+              layout={chartLayout('', '%', muscleRateShapes, tightYRange(muscleRate))}
               config={PLOTLY_CONFIG}
               useResizeHandler style={{ width: '100%', height: 280 }}
             />
@@ -516,7 +526,7 @@ export default function BodyMetricsPage() {
           </div>
           <Plot
             data={[trace(bmi, 'BMI', '#65bcff')]}
-            layout={chartLayout('', '', bmiShapes)}
+            layout={chartLayout('', '', bmiShapes, tightYRange(bmi))}
             config={PLOTLY_CONFIG}
             useResizeHandler style={{ width: '100%', height: 280 }}
           />
@@ -528,7 +538,7 @@ export default function BodyMetricsPage() {
           </div>
           <Plot
             data={[trace(lean, 'Lean Mass', '#c3e88d')]}
-            layout={chartLayout('', 'kg', leanShapes)}
+            layout={chartLayout('', 'kg', leanShapes, tightYRange(lean))}
             config={PLOTLY_CONFIG}
             useResizeHandler style={{ width: '100%', height: 280 }}
           />

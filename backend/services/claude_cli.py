@@ -402,13 +402,13 @@ async def _call_agent(agent_name: str, prompt: str, session_name: str,
         while rotated.exists():
             ts += 1
             rotated = session_file.with_suffix(f".{ts}.jsonl.bak")
-        logger.info(f"Agent [{agent_name}] rotated oversized session ({old_size_kb:.0f}KB, limit {rotation_kb}KB)")
+        logger.debug(f"Agent [{agent_name}] rotated oversized session ({old_size_kb:.0f}KB, limit {rotation_kb}KB)")
         session_file.rename(rotated)
         cutoff = time.time() - 30 * 86400
         for old_bak in rotated.parent.glob("*.bak"):
             if old_bak.stat().st_mtime < cutoff:
                 old_bak.unlink()
-                logger.info(f"Removed old .bak file: {old_bak.name}")
+                logger.debug(f"Removed old .bak file: {old_bak.name}")
         # Also rotate subagents dir if present
         subagents_dir = _SESSIONS_DIR / session_uuid
         if subagents_dir.exists():
@@ -511,7 +511,7 @@ async def _run_agent_cli(cli: str, agent_name: str, prompt: str, session_name: s
 
         if proc.returncode == 0:
             text, result_event = _parse_stream_json(stdout.decode("utf-8", errors="replace"))
-            logger.info(f"Agent [{agent_name}] success ({elapsed:.1f}s, {len(text)} chars)")
+            logger.debug(f"Agent [{agent_name}] success ({elapsed:.1f}s, {len(text)} chars)")
             if result_event:
                 asyncio.create_task(_track_usage(result_event, "agent", agent_name, session_uuid, user_id))
 
@@ -529,7 +529,7 @@ async def _run_agent_cli(cli: str, agent_name: str, prompt: str, session_name: s
 
         # If resume failed with stale session, delete the JSONL and retry with fresh session
         if should_resume and not is_retry and "No conversation found" in stderr_text:
-            logger.info(f"Agent [{agent_name}] stale session — removing JSONL and retrying with fresh session")
+            logger.debug(f"Agent [{agent_name}] stale session — removing JSONL and retrying with fresh session")
             session_file = _SESSIONS_DIR / f"{session_uuid}.jsonl"
             if session_file.exists():
                 session_file.unlink()
@@ -539,7 +539,7 @@ async def _run_agent_cli(cli: str, agent_name: str, prompt: str, session_name: s
 
         # If "session already in use" with --session-id, try resume instead
         if not should_resume and not is_retry and "already in use" in stderr_text:
-            logger.info(f"Agent [{agent_name}] session exists — retrying with --resume")
+            logger.debug(f"Agent [{agent_name}] session exists — retrying with --resume")
             return await _run_agent_cli(cli, agent_name, prompt, session_name,
                                         session_uuid, True, user_id, is_retry=True,
                                         max_turns=max_turns, model_override=model_override)

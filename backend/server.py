@@ -56,8 +56,9 @@ async def _get_ai_rate_limit() -> int:
     try:
         conn = await db.get_db()
         try:
-            row = await conn.execute_fetchone(
+            cursor = await conn.execute(
                 "SELECT value FROM app_settings WHERE key = 'ai_rate_limit'")
+            row = await cursor.fetchone()
             _ai_rate_limit = int(row[0]) if row else 0
             _ai_rate_limit_loaded = now
         finally:
@@ -400,4 +401,4 @@ if __name__ == "__main__":
     print(f"Training data: {TRAINING_DATA}")
     print(f"Database: {db.DB_PATH}")
     print(f"Starting server at http://localhost:8000")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000, access_log=False)

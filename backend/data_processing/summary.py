@@ -104,7 +104,7 @@ def _apply_gps_corrections_to_summary(data_dir: Path = None):
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(workouts)
-        logger.info("GPS corrections applied to summary CSV")
+        logger.debug("GPS corrections applied to summary CSV")
 
 
 def _merge_nearby_workouts(workouts: list, user_id: int = 1) -> list:
@@ -162,7 +162,7 @@ def _merge_nearby_workouts(workouts: list, user_id: int = 1) -> list:
             continue
 
         # Merge: combine into prev
-        logger.info(f"Merging workout #{w.get('workout_num')} into #{prev.get('workout_num')} "
+        logger.debug(f"Merging workout #{w.get('workout_num')} into #{prev.get('workout_num')} "
                      f"(same {prev_disc}, gap={gap_min:.1f}min)")
 
         # Capture original durations BEFORE summing for weighted averages

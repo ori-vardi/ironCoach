@@ -493,7 +493,7 @@ def _save_precomputed_sections(workout_num: int, data_dir: Path = None, merged_n
         if gpx_route:
             # GPX timestamps are UTC — convert to local time (same as _parse_ts)
             gps_points = [(p[0] + timedelta(hours=utc_off), p[1], p[2]) for p in gpx_route]
-            logger.info(f"Workout #{workout_num}: loaded {len(gps_points)} GPS points from GPX route")
+            logger.debug(f"Workout #{workout_num}: loaded {len(gps_points)} GPS points from GPX route")
 
     # Pre-extract sorted GPS timestamps for bisect lookups
     gps_times = [g[0] for g in gps_points] if gps_points else []
@@ -621,7 +621,7 @@ def _save_precomputed_sections(workout_num: int, data_dir: Path = None, merged_n
                     seg["hr"] = round(hr_ts[best_idx][1])
                     seg["zone"] = _hr_zone(hr_ts[best_idx][1])
             hr_segs.append(seg)
-        logger.info(f"Workout #{workout_num}: built {len(hr_segs)} HR-colored GPS segments from GPX route")
+        logger.debug(f"Workout #{workout_num}: built {len(hr_segs)} HR-colored GPS segments from GPX route")
     _save_gps_segments(workout_num, data_dir, hr_segs)
 
     return True
