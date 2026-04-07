@@ -7,18 +7,20 @@ from config import INSIGHT_COACH_PREAMBLE_TEMPLATE, TRAINING_DATA, logger
 from data_processing import (
     _load_summary, _filter_hidden, _compute_recovery_timeline,
     _recovery_label, _load_recovery_data, _safe_float,
+    resolve_hr_settings,
 )
 
 _HE_DAYS = ["שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת", "ראשון"]
 
 
-def _get_current_recovery(user_data_dir, user_id: int = 1) -> dict | None:
+def _get_current_recovery(user_data_dir, user_id: int = 1,
+                          hr_rest: float = None, hr_max: float = None, hr_lthr: float = None) -> dict | None:
     """Compute current recovery stats from workout + recovery CSVs."""
     if not user_data_dir.exists():
         return None
     workouts = _load_summary(user_data_dir)
     workouts = _filter_hidden(workouts, user_id)
-    result = _compute_recovery_timeline(workouts)
+    result = _compute_recovery_timeline(workouts, hr_rest=hr_rest, hr_max=hr_max, hr_lthr=hr_lthr)
     if not result["timeline"]:
         return None
     last = result["timeline"][-1]
@@ -149,9 +151,27 @@ async def _build_coach_preamble(user_id: int = 1, agent_name: str = None, lang: 
 
     # Add current recovery status (live-computed, not cached)
     user_data_dir = TRAINING_DATA / "users" / str(user_id)
+    # Load per-user HR settings for recovery computation + preamble
+    hr_rest_val = hr_max_val = hr_lthr_val = None
+    hr_settings = None
+    try:
+        conn_hr = await db.get_db()
+        try:
+            hr_db = await db.hr_settings_get(conn_hr, user_id)
+        finally:
+            await conn_hr.close()
+        hr_settings = resolve_hr_settings(hr_db, profile)
+        if hr_settings.get("hr_max", 0) > 0:
+            hr_rest_val = hr_settings["hr_rest"]
+            hr_max_val = hr_settings["hr_max"]
+            hr_lthr_val = hr_settings["hr_lthr"]
+    except Exception:
+        pass
     try:
         loop = asyncio.get_event_loop()
-        recovery_stats = await loop.run_in_executor(None, _get_current_recovery, user_data_dir, user_id)
+        recovery_stats = await loop.run_in_executor(
+            None, _get_current_recovery, user_data_dir, user_id,
+            hr_rest_val, hr_max_val, hr_lthr_val)
         if recovery_stats:
             today = datetime.now().strftime("%Y-%m-%d")
             data_date = recovery_stats.get("recovery_data_date", "")
@@ -172,6 +192,23 @@ async def _build_coach_preamble(user_id: int = 1, agent_name: str = None, lang: 
                 parts.append(f"- Sleep: **{recovery_stats['sleep_hours']}** (from {data_date})")
     except Exception as e:
         logger.debug("Failed to inject recovery stats into preamble: %s", e)
+
+    # Add HR zone data so all coaches know the athlete's zones
+    if hr_settings and hr_settings.get("hr_max", 0) > 0:
+        parts.append("\n### HR Zones")
+        parts.append(f"- HR Max: **{int(hr_settings['hr_max'])} bpm** | HR Rest: **{int(hr_settings['hr_rest'])} bpm** | LTHR: **{int(hr_settings['hr_lthr'])} bpm**")
+        zones = hr_settings.get("hr_zones", [])
+        if zones:
+            zone_strs = []
+            for name, lo, hi in zones:
+                if hi >= 999:
+                    zone_strs.append(f"{name}: {lo}+")
+                else:
+                    zone_strs.append(f"{name}: {lo}-{hi}")
+            parts.append(f"- Zones: {' | '.join(zone_strs)}")
+        src = hr_settings.get("source", "unknown")
+        locked = hr_settings.get("locked", False)
+        parts.append(f"- Source: {src}{' (locked — manual override)' if locked else ' (auto-updated)'}")
 
     # Add data directory info for file access
     if user_data_dir.exists():

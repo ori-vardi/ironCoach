@@ -62,6 +62,17 @@ from .nutrition_helpers import (
     _load_nutrition_settings,
     _meal_relevant_to_workout,
 )
+from .hr_zones import (
+    compute_default_hr_max,
+    compute_default_hr_rest,
+    compute_default_hr_lthr,
+    compute_zones_from_hr,
+    zones_from_boundaries,
+    zone_boundaries,
+    detect_hr_max_from_workouts,
+    detect_hr_rest_from_recovery,
+    resolve_hr_settings,
+)
 
 __all__ = [
     # helpers
@@ -121,5 +132,15 @@ __all__ = [
     "_load_nutrition_window",
     "_load_nutrition_settings",
     "_meal_relevant_to_workout",
+    # hr_zones
+    "compute_default_hr_max",
+    "compute_default_hr_rest",
+    "compute_default_hr_lthr",
+    "compute_zones_from_hr",
+    "zones_from_boundaries",
+    "zone_boundaries",
+    "detect_hr_max_from_workouts",
+    "detect_hr_rest_from_recovery",
+    "resolve_hr_settings",
 ]
 

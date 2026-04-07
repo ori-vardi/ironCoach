@@ -80,3 +80,20 @@ def _migrate_user1_data():
             shutil.move(str(f), str(user1_dir / f.name))
 
     logger.info("Migration complete: user 1 data moved to training_data/users/1/")
+
+
+async def _load_user_hr(uid: int) -> dict:
+    """Load per-user HR settings (DB > calculated > config fallback).
+
+    Returns dict with hr_max, hr_rest, hr_lthr, hr_zones, locked, source.
+    """
+    import database as db
+    from data_processing.hr_zones import resolve_hr_settings
+
+    conn = await db.get_db()
+    try:
+        hr_db = await db.hr_settings_get(conn, uid)
+        profile = await db.user_get_profile(conn, uid)
+    finally:
+        await conn.close()
+    return resolve_hr_settings(hr_db, profile)

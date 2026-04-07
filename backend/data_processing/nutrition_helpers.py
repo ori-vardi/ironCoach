@@ -9,7 +9,8 @@ from .csv_loaders import _load_recovery_data
 from .recovery import _compute_recovery_timeline, _recovery_label
 
 
-def _build_recovery_sleep_context(workout_date_str: str, workouts: list, data_dir: Path = None) -> str:
+def _build_recovery_sleep_context(workout_date_str: str, workouts: list, data_dir: Path = None,
+                                   hr_rest: float = None, hr_max: float = None, hr_lthr: float = None) -> str:
     """Build recovery (CTL/ATL/TSB) and sleep context for a workout date.
 
     Returns a text block to inject into insight prompts, or empty string if
@@ -19,7 +20,7 @@ def _build_recovery_sleep_context(workout_date_str: str, workouts: list, data_di
 
     # Recovery status (CTL/ATL/TSB) computed from all workouts up to this date
     try:
-        recovery = _compute_recovery_timeline(workouts)
+        recovery = _compute_recovery_timeline(workouts, hr_rest=hr_rest, hr_max=hr_max, hr_lthr=hr_lthr)
         per_workout = recovery.get("per_workout", {})
         # Find workouts on this date to get their recovery scores
         for w2 in workouts:

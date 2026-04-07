@@ -91,8 +91,15 @@ async def nutrition_add(request: Request):
     meal_date = data.get("date", "")
     meal_time = data.get("meal_time", "")
     meal_type = data.get("meal_type", "")
-    regenerating_workouts = await _check_meal_regeneration(meal_date, meal_time, meal_type, uid)
 
+    # Skip regen if insight generation is already running — the active generation
+    # will already include the latest nutrition data
+    from services.task_tracker import _insight_status
+    insight_running = _insight_status.get("running") and _insight_status.get("user_id") == uid
+    if insight_running:
+        return {"id": new_id, "regenerating": []}
+
+    regenerating_workouts = await _check_meal_regeneration(meal_date, meal_time, meal_type, uid)
     if regenerating_workouts:
         asyncio.create_task(_maybe_regenerate_insight_for_date(meal_date, data, user_id=uid))
     return {"id": new_id, "regenerating": regenerating_workouts}
@@ -284,8 +291,13 @@ async def nutrition_edit(entry_id: int, request: Request):
     finally:
         await conn.close()
 
-    regenerating_workouts = await _check_meal_regeneration(meal_date, meal_time, meal_type, uid)
+    # Skip regen if insight generation is already running
+    from services.task_tracker import _insight_status
+    insight_running = _insight_status.get("running") and _insight_status.get("user_id") == uid
+    if insight_running:
+        return {"ok": True, "regenerating": []}
 
+    regenerating_workouts = await _check_meal_regeneration(meal_date, meal_time, meal_type, uid)
     if regenerating_workouts:
         asyncio.create_task(_maybe_regenerate_insight_for_date(meal_date, data, user_id=uid))
     return {"ok": True, "regenerating": regenerating_workouts}

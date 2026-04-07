@@ -221,6 +221,20 @@ CREATE INDEX IF NOT EXISTS idx_workout_insights_user ON workout_insights(user_id
 CREATE INDEX IF NOT EXISTS idx_events_user ON events(user_id);
 CREATE INDEX IF NOT EXISTS idx_token_usage_user ON token_usage(user_id, timestamp);
 CREATE INDEX IF NOT EXISTS idx_period_insights_user ON period_insights(user_id, from_date, to_date);
+
+CREATE TABLE IF NOT EXISTS user_hr_settings (
+    user_id INTEGER PRIMARY KEY,
+    hr_max REAL NOT NULL DEFAULT 0,
+    hr_rest REAL NOT NULL DEFAULT 0,
+    hr_lthr REAL NOT NULL DEFAULT 0,
+    zone1_upper REAL NOT NULL DEFAULT 0,
+    zone2_upper REAL NOT NULL DEFAULT 0,
+    zone3_upper REAL NOT NULL DEFAULT 0,
+    zone4_upper REAL NOT NULL DEFAULT 0,
+    locked INTEGER NOT NULL DEFAULT 0,
+    source TEXT NOT NULL DEFAULT 'calculated',
+    updated_at TEXT NOT NULL DEFAULT ''
+);
 """
 
 SEED_RACE = """
@@ -1177,7 +1191,7 @@ async def user_delete(db, user_id):
         "chat_history", "nutrition_log", "training_plan", "workout_insights",
         "general_insights", "period_insights", "token_usage", "coach_memory",
         "agent_memory", "notification_history", "chat_session_titles",
-        "agent_sessions",
+        "agent_sessions", "user_hr_settings",
     ):
         await db.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
     # Per-user settings (keys like 'nutrition_auto_suggest_enabled_2')
@@ -1207,6 +1221,37 @@ async def user_update_profile(db, user_id, data: dict):
     sets = ", ".join(f"{k} = ?" for k in filtered)
     vals = list(filtered.values()) + [user_id]
     await db.execute(f"UPDATE users SET {sets} WHERE id = ?", vals)
+    await db.commit()
+
+
+# ── HR Settings helpers ──────────────────────────────────────────────────
+
+async def hr_settings_get(db, user_id):
+    cursor = await db.execute(
+        "SELECT * FROM user_hr_settings WHERE user_id = ?", (user_id,)
+    )
+    row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
+async def hr_settings_upsert(db, user_id, data: dict):
+    allowed = {
+        "hr_max", "hr_rest", "hr_lthr",
+        "zone1_upper", "zone2_upper", "zone3_upper", "zone4_upper",
+        "locked", "source", "updated_at",
+    }
+    filtered = {k: v for k, v in data.items() if k in allowed}
+    if not filtered:
+        return
+    filtered["user_id"] = user_id
+    cols = ", ".join(filtered.keys())
+    placeholders = ", ".join(["?"] * len(filtered))
+    updates = ", ".join(f"{k} = excluded.{k}" for k in filtered if k != "user_id")
+    await db.execute(
+        f"INSERT INTO user_hr_settings ({cols}) VALUES ({placeholders}) "
+        f"ON CONFLICT(user_id) DO UPDATE SET {updates}",
+        list(filtered.values()),
+    )
     await db.commit()
 
 

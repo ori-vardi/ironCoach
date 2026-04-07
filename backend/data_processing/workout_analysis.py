@@ -126,8 +126,8 @@ def _load_workout_timeseries(workout_num: int, data_dir: Path = None):
     }
 
 
-def _hr_zone(hr: float) -> str:
-    for name, lo, hi in _HR_ZONES:
+def _hr_zone(hr: float, zones: list = None) -> str:
+    for name, lo, hi in (zones or _HR_ZONES):
         if lo <= hr < hi:
             return name
     return "Z5"
@@ -619,7 +619,7 @@ def _save_precomputed_sections(workout_num: int, data_dir: Path = None, merged_n
                     best_idx = idx - 1 if d1 < d2 else idx
                 if abs((hr_ts[best_idx][0] - ts_local).total_seconds()) <= 30:
                     seg["hr"] = round(hr_ts[best_idx][1])
-                    seg["zone"] = _hr_zone(hr_ts[best_idx][1])
+                    seg["zone"] = _hr_zone(hr_ts[best_idx][1], zones)
             hr_segs.append(seg)
         logger.debug(f"Workout #{workout_num}: built {len(hr_segs)} HR-colored GPS segments from GPX route")
     _save_gps_segments(workout_num, data_dir, hr_segs)
@@ -706,7 +706,7 @@ def _generate_all_sections(data_dir: Path, workout_nums: list = None) -> int:
     return count
 
 
-def _compute_sections(workout_num: int, data_dir: Path = None, merged_nums: list = None, force_full: bool = False) -> dict | None:
+def _compute_sections(workout_num: int, data_dir: Path = None, merged_nums: list = None, force_full: bool = False, zones: list = None) -> dict | None:
     """Compute per-section splits, HR zones, and colored GPS segments.
 
     merged_nums: if provided, load and concatenate timeseries from all workout numbers.
@@ -941,7 +941,7 @@ def _compute_sections(workout_num: int, data_dir: Path = None, merged_nums: list
             if last_hr > 0 and last_hr_ts and current_ts:
                 dt_sec = (current_ts - last_hr_ts).total_seconds()
                 if 0 < dt_sec < 120:  # reasonable gap between HR samples
-                    hr_zone_secs[_hr_zone(hr_val)] += dt_sec
+                    hr_zone_secs[_hr_zone(hr_val, zones)] += dt_sec
             last_hr = hr_val
             last_hr_ts = current_ts
 
@@ -962,7 +962,7 @@ def _compute_sections(workout_num: int, data_dir: Path = None, merged_nums: list
                     "hr": round(seg_hr, 1) if seg_hr > 0 else None,
                     "pace": round(pace, 2) if pace > 0 else None,
                     "elevation": round(elev, 1) if elev is not None else None,
-                    "zone": _hr_zone(seg_hr) if seg_hr > 0 else None,
+                    "zone": _hr_zone(seg_hr, zones) if seg_hr > 0 else None,
                 })
 
         # Accumulate distance (iPhone duplicates already removed at CSV level by source dedup)
@@ -1155,7 +1155,7 @@ def _compute_sections(workout_num: int, data_dir: Path = None, merged_nums: list
             slat, slon = _nearest_gps(sec_start_ts)
             section["start_lat"] = slat
             section["start_lon"] = slon
-            section["hr_zone"] = _hr_zone(section.get("avg_hr") or 0) if section.get("avg_hr") else None
+            section["hr_zone"] = _hr_zone(section.get("avg_hr") or 0, zones) if section.get("avg_hr") else None
             section["_start_ts"] = sec_start_ts
             section["_end_ts"] = current_ts
 
@@ -1395,7 +1395,7 @@ def _compute_sections(workout_num: int, data_dir: Path = None, merged_nums: list
                     "strokes": lap_strokes,
                     "stroke_style": style_name,
                     "avg_hr": lap_hr,
-                    "hr_zone": _hr_zone(lap_hr) if lap_hr else None,
+                    "hr_zone": _hr_zone(lap_hr, zones) if lap_hr else None,
                 })
 
     # Build /100M sections from events.json laps (groups of N laps = 100m)
@@ -1426,7 +1426,7 @@ def _compute_sections(workout_num: int, data_dir: Path = None, merged_nums: list
                 "pace_per_100m_sec": round(pace_100, 1),
                 "pace_str": f"{mm}:{ss:02d}/100m",
                 "avg_hr": avg_hr,
-                "hr_zone": _hr_zone(avg_hr) if avg_hr else None,
+                "hr_zone": _hr_zone(avg_hr, zones) if avg_hr else None,
                 "stroke_count": total_strokes,
                 "stroke_style": style,
                 "swolf_100": swolf_100,

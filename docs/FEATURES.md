@@ -438,6 +438,21 @@ Load spike alerts are **normalized by training days** — a partial current week
 
 Weight, body fat%, muscle mass, lean mass, BMI — all from Apple Health (including smart scale data like LeaOne/eufy Life). Reference range bands with cited sources are shown on charts.
 
+### Per-User HR Zones
+
+HR zones, HR max, HR rest, and LTHR are stored per-user (not hardcoded). Three data sources, in priority order:
+
+| Source | When | Values |
+|:-------|:-----|:-------|
+| **Apple Health (auto)** | On each import | HR Max = highest observed max HR across workouts. HR Rest = median resting HR (last 14 days). |
+| **Calculated** | When no workout data exists | Tanaka formula: HR Max = 208 - 0.7 x age. HR Rest = 55 (male) / 60 (female). |
+| **Manual (locked)** | User edits in Athlete Profile | Custom values. Auto-update disabled until user unlocks. |
+
+- Zones use the Karvonen formula (% of Heart Rate Reserve = HR Max - HR Rest)
+- LTHR estimated at 89% of HR Max
+- All recovery calculations (TRIMP, CTL/ATL/TSB) use per-user values
+- UI: Body Metrics page > HR Zones section (collapsible, with Auto/Locked toggle and info tooltip)
+
 ---
 
 ## Coach Memory

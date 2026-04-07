@@ -256,6 +256,139 @@ async def auth_update_profile(request: Request):
         await conn.close()
 
 
+@router.get("/api/auth/hr-settings")
+async def auth_get_hr_settings(request: Request):
+    """Get user's resolved HR settings (DB > calculated > config fallback)."""
+    from data_processing.hr_zones import (
+        resolve_hr_settings, _age_from_profile,
+        compute_default_hr_max, compute_default_hr_rest, compute_default_hr_lthr,
+        compute_zones_from_hr, detect_hr_max_from_workouts, detect_hr_rest_from_recovery,
+    )
+    from data_processing import _load_summary, _load_recovery_data
+    from routes.deps import _user_data_dir
+
+    uid = _uid(request)
+    conn = await db.get_db()
+    try:
+        hr_db = await db.hr_settings_get(conn, uid)
+        profile = await db.user_get_profile(conn, uid)
+    finally:
+        await conn.close()
+
+    resolved = resolve_hr_settings(hr_db, profile)
+
+    # Also provide calculated (from age/sex) and detected (from data) for the UI
+    age = _age_from_profile(profile)
+    sex = (profile or {}).get("sex", "male")
+    calc_max = compute_default_hr_max(age, sex)
+    calc_rest = compute_default_hr_rest(sex)
+    calc_lthr = compute_default_hr_lthr(calc_max)
+    calc_zones = compute_zones_from_hr(calc_max, calc_rest)
+
+    dd = _user_data_dir(uid)
+    detected = {}
+    try:
+        workouts = _load_summary(dd)
+        det_max = detect_hr_max_from_workouts(workouts)
+        if det_max:
+            detected["hr_max"] = det_max
+        recovery_raw = _load_recovery_data(dd)
+        det_rest = detect_hr_rest_from_recovery(recovery_raw)
+        if det_rest:
+            detected["hr_rest"] = det_rest
+    except Exception:
+        pass
+
+    return {
+        **resolved,
+        "hr_zones": [list(z) for z in resolved["hr_zones"]],
+        "calculated": {
+            "hr_max": calc_max, "hr_rest": calc_rest, "hr_lthr": calc_lthr,
+            "hr_zones": [list(z) for z in calc_zones],
+        },
+        "detected": detected,
+    }
+
+
+@router.put("/api/auth/hr-settings")
+async def auth_update_hr_settings(request: Request):
+    """Update user's HR settings. Setting any value sets locked=true.
+    Send {locked: false} to reset to auto mode."""
+    from datetime import datetime, timezone
+    from data_processing.hr_zones import (
+        compute_zones_from_hr, zone_boundaries,
+        detect_hr_max_from_workouts, detect_hr_rest_from_recovery,
+        compute_default_hr_max, compute_default_hr_rest, compute_default_hr_lthr,
+        _age_from_profile,
+    )
+    from data_processing import _load_summary, _load_recovery_data
+    from routes.deps import _user_data_dir
+
+    uid = _uid(request)
+    body = await request.json()
+
+    conn = await db.get_db()
+    try:
+        if body.get("locked") is False:
+            # Reset to auto mode — recalculate from best available source
+            profile = await db.user_get_profile(conn, uid)
+            dd = _user_data_dir(uid)
+            age = _age_from_profile(profile)
+            sex = (profile or {}).get("sex", "male")
+
+            # Try detected values first, fall back to calculated
+            hr_max = compute_default_hr_max(age, sex)
+            hr_rest = compute_default_hr_rest(sex)
+            try:
+                workouts = _load_summary(dd)
+                det_max = detect_hr_max_from_workouts(workouts)
+                if det_max:
+                    hr_max = det_max
+                recovery_raw = _load_recovery_data(dd)
+                det_rest = detect_hr_rest_from_recovery(recovery_raw)
+                if det_rest:
+                    hr_rest = det_rest
+            except Exception:
+                pass
+
+            hr_lthr = compute_default_hr_lthr(hr_max)
+            zones = compute_zones_from_hr(hr_max, hr_rest)
+            data = {
+                "hr_max": hr_max, "hr_rest": hr_rest, "hr_lthr": hr_lthr,
+                **zone_boundaries(zones),
+                "locked": 0,
+                "source": "apple_health" if det_max or det_rest else "calculated",
+                "updated_at": datetime.now(tz=timezone.utc).isoformat(),
+            }
+            await db.hr_settings_upsert(conn, uid, data)
+            return {"ok": True, "mode": "auto"}
+
+        # Manual update — lock the values
+        data = {"locked": 1, "source": "manual",
+                "updated_at": datetime.now(tz=timezone.utc).isoformat()}
+        for field in ("hr_max", "hr_rest", "hr_lthr"):
+            if field in body:
+                data[field] = float(body[field])
+        for field in ("zone1_upper", "zone2_upper", "zone3_upper", "zone4_upper"):
+            if field in body:
+                data[field] = float(body[field])
+
+        # If HR max/rest changed but zones not explicitly set, recompute zones
+        if ("hr_max" in body or "hr_rest" in body) and "zone1_upper" not in body:
+            current = await db.hr_settings_get(conn, uid)
+            hr_max = data.get("hr_max", (current or {}).get("hr_max", 182))
+            hr_rest = data.get("hr_rest", (current or {}).get("hr_rest", 55))
+            zones = compute_zones_from_hr(hr_max, hr_rest)
+            data.update(zone_boundaries(zones))
+            if "hr_lthr" not in body:
+                data["hr_lthr"] = compute_default_hr_lthr(hr_max)
+
+        await db.hr_settings_upsert(conn, uid, data)
+        return {"ok": True, "mode": "locked"}
+    finally:
+        await conn.close()
+
+
 @router.post("/api/auth/change-password")
 async def auth_change_password(request: Request):
     """Any authenticated user can change their own password."""

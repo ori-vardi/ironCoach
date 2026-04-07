@@ -137,6 +137,226 @@ function ProfileSection({ onBmrUpdate, onHeightUpdate }) {
   )
 }
 
+const HR_ZONE_COLORS = { Z1: '#3478B0', Z2: '#2B8070', Z3: '#7C9B2E', Z4: '#B07028', Z5: '#862248' }
+
+function HrZonesSection() {
+  const [hr, setHr] = useState(null)
+  const [editing, setEditing] = useState(null)  // local draft while editing
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    api('/api/auth/hr-settings').then(data => {
+      setHr(data)
+      if (data?.locked) setEditing({
+        hr_max: data.hr_max, hr_rest: data.hr_rest, hr_lthr: data.hr_lthr,
+        zone1_upper: (data.hr_zones || [])[0]?.[2] || 0,
+        zone2_upper: (data.hr_zones || [])[1]?.[2] || 0,
+        zone3_upper: (data.hr_zones || [])[2]?.[2] || 0,
+        zone4_upper: (data.hr_zones || [])[3]?.[2] || 0,
+      })
+    }).catch(() => {})
+  }, [])
+
+  if (!hr) return null
+
+  const locked = hr.locked
+  const zones = hr.hr_zones || []
+
+  async function toggleLock() {
+    setSaving(true)
+    setMsg('')
+    try {
+      if (locked) {
+        // Switch to auto
+        await api('/api/auth/hr-settings', {
+          method: 'PUT', body: JSON.stringify({ locked: false }),
+        })
+      } else {
+        // Switch to locked with current values
+        await api('/api/auth/hr-settings', {
+          method: 'PUT', body: JSON.stringify({ hr_max: hr.hr_max, hr_rest: hr.hr_rest, hr_lthr: hr.hr_lthr }),
+        })
+      }
+      const fresh = await api('/api/auth/hr-settings')
+      setHr(fresh)
+      // If switching to manual, start editing; if auto, clear editing
+      setEditing(fresh.locked ? {
+        hr_max: fresh.hr_max, hr_rest: fresh.hr_rest, hr_lthr: fresh.hr_lthr,
+        zone1_upper: (fresh.hr_zones || [])[0]?.[2] || 0,
+        zone2_upper: (fresh.hr_zones || [])[1]?.[2] || 0,
+        zone3_upper: (fresh.hr_zones || [])[2]?.[2] || 0,
+        zone4_upper: (fresh.hr_zones || [])[3]?.[2] || 0,
+      } : null)
+      setMsg('Saved')
+      setTimeout(() => setMsg(''), 1500)
+    } catch { setMsg('Failed') }
+    finally { setSaving(false) }
+  }
+
+  async function handleSave() {
+    if (!editing) return
+    setSaving(true)
+    setMsg('')
+    try {
+      await api('/api/auth/hr-settings', {
+        method: 'PUT', body: JSON.stringify(editing),
+      })
+      const fresh = await api('/api/auth/hr-settings')
+      setHr(fresh)
+      setEditing(null)
+      setMsg('Saved')
+      setTimeout(() => setMsg(''), 1500)
+    } catch { setMsg('Failed') }
+    finally { setSaving(false) }
+  }
+
+  function startEdit() {
+    setEditing({
+      hr_max: hr.hr_max, hr_rest: hr.hr_rest, hr_lthr: hr.hr_lthr,
+      zone1_upper: zones[0]?.[2] || 0, zone2_upper: zones[1]?.[2] || 0,
+      zone3_upper: zones[2]?.[2] || 0, zone4_upper: zones[3]?.[2] || 0,
+    })
+  }
+
+  const vals = editing || {
+    hr_max: hr.hr_max, hr_rest: hr.hr_rest, hr_lthr: hr.hr_lthr,
+    zone1_upper: zones[0]?.[2] || 0, zone2_upper: zones[1]?.[2] || 0,
+    zone3_upper: zones[2]?.[2] || 0, zone4_upper: zones[3]?.[2] || 0,
+  }
+
+  const sourceLabel = hr.source === 'apple_health' ? 'Apple Health'
+    : hr.source === 'manual' ? 'Manual'
+    : 'Calculated from profile'
+
+  const detectedInfo = []
+  if (hr.detected?.hr_max) detectedInfo.push(`Detected HR Max: ${hr.detected.hr_max}`)
+  if (hr.detected?.hr_rest) detectedInfo.push(`Detected HR Rest: ${hr.detected.hr_rest}`)
+
+  const infoText = [
+    '**How HR zones are calculated**',
+    'In **Auto** mode, values update automatically from your Apple Health data on each import:',
+    '- **HR Max**: highest observed max HR across all workouts',
+    '- **HR Rest**: median resting HR from last 14 days',
+    '- **LTHR**: 89% of HR Max (endurance estimate)',
+    '- **Zones**: Karvonen formula (% of HR Reserve)',
+    '',
+    'If no workout data exists, defaults use the Tanaka formula: **HR Max = 208 - 0.7 x age**',
+    '',
+    'Switch to **Manual** to set custom values. Manual values won\'t be overwritten by imports.',
+  ].join('\n')
+
+  return (
+    <div className="profile-section" style={{ marginBottom: 18 }}>
+      <button
+        className="profile-toggle"
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px',
+          background: 'var(--bg-2)', border: '1px solid var(--border)',
+          borderRadius: 10, color: 'var(--text)', cursor: 'pointer', fontSize: 13, width: '100%',
+        }}
+      >
+        <span style={{ fontSize: 15 }}>{'\u2764\uFE0F'}</span>
+        <span style={{ fontWeight: 600, fontSize: 13 }}>HR Zones</span>
+        <div style={{ display: 'flex', gap: 6, marginInlineStart: 6 }}>
+          <span style={{
+            padding: '2px 8px', borderRadius: 12, fontSize: 11, fontWeight: 500,
+            background: locked ? 'rgba(255,150,108,0.1)' : 'rgba(101,188,255,0.1)',
+            color: locked ? '#ff966c' : 'var(--accent)',
+          }}>{locked ? 'Manual' : 'Auto'}</span>
+          <span style={{
+            padding: '2px 8px', borderRadius: 12, fontSize: 11, fontWeight: 500,
+            background: 'rgba(101,188,255,0.06)', color: 'var(--text-dim)',
+          }}>Max {Math.round(hr.hr_max)} | Rest {Math.round(hr.hr_rest)}</span>
+        </div>
+        <span style={{ marginInlineStart: 'auto', opacity: 0.4, fontSize: 11 }}>{open ? '\u25B2' : '\u25BC'}</span>
+      </button>
+
+      {open && (
+        <div style={{
+          padding: '14px 16px', marginTop: 4,
+          background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 10,
+        }}>
+          {/* Toggle row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12 }}>
+              <span className="text-dim" style={{ fontWeight: locked ? 400 : 600, color: locked ? undefined : 'var(--accent)' }}>Auto</span>
+              <div
+                onClick={toggleLock}
+                style={{
+                  width: 36, height: 20, borderRadius: 10, position: 'relative',
+                  background: locked ? 'var(--accent-orange, #ff966c)' : 'var(--accent)',
+                  cursor: saving ? 'not-allowed' : 'pointer', transition: 'background 0.2s',
+                  opacity: saving ? 0.5 : 1,
+                }}
+              >
+                <div style={{
+                  width: 16, height: 16, borderRadius: '50%', background: '#fff',
+                  position: 'absolute', top: 2,
+                  left: locked ? 18 : 2, transition: 'left 0.2s',
+                }} />
+              </div>
+              <span style={{ fontWeight: locked ? 600 : 400, color: locked ? 'var(--accent-orange, #ff966c)' : undefined }} className="text-dim">Manual</span>
+            </label>
+            <InfoTip text={infoText} />
+            {editing && (
+              <button className="btn btn-accent btn-xs" onClick={handleSave} disabled={saving}>
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            )}
+            {msg && <span className={msg === 'Saved' ? 'text-green text-xs' : 'text-red text-xs'}>{msg}</span>}
+          </div>
+          {detectedInfo.length > 0 && (
+            <div className="text-dim" style={{ fontSize: 11, marginBottom: 10, marginTop: -8 }}>
+              ({detectedInfo.join(', ')})
+            </div>
+          )}
+
+          {/* HR values row */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end', marginBottom: 14 }}>
+            {[
+              ['HR Max', 'hr_max'], ['HR Rest', 'hr_rest'], ['LTHR', 'hr_lthr'],
+            ].map(([label, key]) => (
+              <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
+                <label className="text-dim" style={{ fontSize: 11, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 3 }}>
+                  {label}
+                  {key === 'hr_lthr' && <InfoTip text="**LTHR (Lactate Threshold Heart Rate)**\nThe highest HR you can sustain for ~1 hour. Used to define training zones.\nEstimated at 89% of HR Max when in Auto mode." />}
+                </label>
+                <input type="number" className="input-sm" style={{ width: 60, textAlign: 'center' }}
+                  value={Math.round(vals[key]) || ''}
+                  disabled={!locked}
+                  onChange={e => setEditing(prev => ({ ...(prev || vals), [key]: parseFloat(e.target.value) || 0 }))}
+                />
+              </div>
+            ))}
+          </div>
+
+          {/* Zone boundaries */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-start' }}>
+            {[
+              ['Z1/Z2', 'zone1_upper', HR_ZONE_COLORS.Z1],
+              ['Z2/Z3', 'zone2_upper', HR_ZONE_COLORS.Z2],
+              ['Z3/Z4', 'zone3_upper', HR_ZONE_COLORS.Z3],
+              ['Z4/Z5', 'zone4_upper', HR_ZONE_COLORS.Z4],
+            ].map(([label, key, color]) => (
+              <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <label style={{ fontSize: 11, fontWeight: 500, color, lineHeight: 1, textAlign: 'center' }}>{label}</label>
+                <input type="number" className="input-sm" style={{ width: 55, textAlign: 'center' }}
+                  value={Math.round(vals[key]) || ''}
+                  disabled={!locked}
+                  onChange={e => setEditing(prev => ({ ...(prev || vals), [key]: parseFloat(e.target.value) || 0 }))}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function formatDate(d) {
   const dt = new Date(d)
   return dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' })
@@ -322,6 +542,7 @@ export default function BodyMetricsPage() {
   if (!allData.length || !data.length) return (
     <div className="empty-state">
       <ProfileSection onBmrUpdate={setBmr} onHeightUpdate={setProfileHeight} />
+      <HrZonesSection />
       <p>{t('no_body_metrics')}</p>
       <p className="text-dim text-sm">{t('import_body_metrics_hint')}</p>
     </div>
@@ -399,6 +620,7 @@ export default function BodyMetricsPage() {
   return (
     <div className="page-body-metrics">
       <ProfileSection onBmrUpdate={setBmr} onHeightUpdate={setProfileHeight} />
+      <HrZonesSection />
       <div className="flex-between mb-20">
         <div>
           <h2 style={{ margin: 0 }}>{t('page_body')}</h2>

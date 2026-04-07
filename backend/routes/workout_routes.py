@@ -239,10 +239,13 @@ async def get_weekly_stats(request: Request):
 @router.get("/api/recovery")
 async def get_recovery(request: Request, from_date: str = "", to_date: str = ""):
     dd = _user_data_dir(request)
+    uid = _uid(request)
     loop = asyncio.get_event_loop()
     workouts = _load_summary(dd)
-    workouts = await loop.run_in_executor(None, _filter_hidden, workouts, _uid(request))
-    result = _compute_recovery_timeline(workouts)
+    workouts = await loop.run_in_executor(None, _filter_hidden, workouts, uid)
+    from routes.deps import _load_user_hr
+    hr = await _load_user_hr(uid)
+    result = _compute_recovery_timeline(workouts, hr_rest=hr["hr_rest"], hr_max=hr["hr_max"], hr_lthr=hr["hr_lthr"])
     if not result["timeline"]:
         return {"current": None, "timeline": [], "per_workout": {}, "disciplines": {}, "recovery_data": []}
 

@@ -18,6 +18,7 @@ from config import (
 )
 from services.task_tracker import (
     _insight_status, _insight_status_lock,
+    _active_tasks, _active_tasks_lock,
 )
 from services.claude_cli import _find_claude_cli, _track_usage, _call_agent, _build_cli_env, _parse_stream_json, _get_model_override, _llm_preflight_check
 from services.coach_preamble import _build_coach_preamble
@@ -1264,10 +1265,22 @@ async def _maybe_regenerate_insight_for_date(date_str: str, meal_data: dict = No
 
     Only regenerates when:
     1. Setting nutrition_regen_enabled is not disabled
-    2. Nutrition entry was created AFTER the insight was generated
-    3. The meal is relevant to the workout timing (pre/post workout window)
+    2. No insight generation is already running (batch or single) for this user
+    3. Nutrition entry was created AFTER the insight was generated
+    4. The meal is relevant to the workout timing (pre/post workout window)
     """
     try:
+        # Skip if insight generation is already running — the active generation
+        # will already include the latest nutrition data
+        if _insight_status.get("running") and _insight_status.get("user_id") == user_id:
+            logger.debug(f"Skipping nutrition regen for {date_str} — insight batch already running for user {user_id}")
+            return
+        async with _active_tasks_lock:
+            for tid in _active_tasks:
+                if tid.startswith("insight-") and tid.endswith(f"-user{user_id}"):
+                    logger.debug(f"Skipping nutrition regen for {date_str} — insight task {tid} already active")
+                    return
+
         ns = _load_nutrition_settings()
         if not ns["regen_enabled"]:
             logger.debug(f"Nutrition insight regen disabled by setting, skipping for {date_str}")
@@ -1554,10 +1567,21 @@ async def _generate_insight_for_workout(w: dict, plans: list, data_dir: Path = N
             if ext_str and specialist_data:
                 specialist_data += f"\nExternal weather data: {ext_str}"
 
-    # Build recovery & sleep context
+    # Build recovery & sleep context (with per-user HR settings)
     if all_workouts is None:
         all_workouts = _enrich_workouts(_load_summary(data_dir))
-    recovery_context = _build_recovery_sleep_context(wdate, all_workouts, data_dir)
+    hr_kw = {}
+    try:
+        conn_hr = await db.get_db()
+        try:
+            hr_db = await db.hr_settings_get(conn_hr, user_id)
+        finally:
+            await conn_hr.close()
+        if hr_db and hr_db.get("hr_max", 0) > 0:
+            hr_kw = {"hr_rest": hr_db["hr_rest"], "hr_max": hr_db["hr_max"], "hr_lthr": hr_db["hr_lthr"]}
+    except Exception:
+        pass
+    recovery_context = _build_recovery_sleep_context(wdate, all_workouts, data_dir, **hr_kw)
     if recovery_context and specialist_data:
         specialist_data += "\n\n" + recovery_context
 
@@ -1811,10 +1835,21 @@ async def _generate_brick_insight(brick_workouts: list[dict], plans_map: dict, d
     if not specialist_outputs:
         return "", ""
 
-    # Build recovery context
+    # Build recovery context (with per-user HR settings)
     if all_workouts is None:
         all_workouts = _enrich_workouts(_load_summary(data_dir))
-    recovery_context = _build_recovery_sleep_context(wdate, all_workouts, data_dir)
+    hr_kw = {}
+    try:
+        conn_hr = await db.get_db()
+        try:
+            hr_db = await db.hr_settings_get(conn_hr, user_id)
+        finally:
+            await conn_hr.close()
+        if hr_db and hr_db.get("hr_max", 0) > 0:
+            hr_kw = {"hr_rest": hr_db["hr_rest"], "hr_max": hr_db["hr_max"], "hr_lthr": hr_db["hr_lthr"]}
+    except Exception:
+        pass
+    recovery_context = _build_recovery_sleep_context(wdate, all_workouts, data_dir, **hr_kw)
 
     # Phase 2: Head coach synthesis — ONE combined brick insight
     total_dur = sum(float(bw.get("duration_min", 0)) for bw in sorted_bw)

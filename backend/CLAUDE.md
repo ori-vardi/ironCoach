@@ -12,7 +12,7 @@ backend/
 ├── auth.py                          # JWT auth (HMAC-SHA256), password hashing
 ├── routes/                          # 16 API route modules + deps.py
 ├── services/                        # 7 business logic modules
-├── data_processing/                 # 7 pure data modules (no FastAPI dependency)
+├── data_processing/                 # 8 pure data modules (no FastAPI dependency)
 ├── tests/                           # pytest tests
 └── data/                            # SQLite DB, uploads, logs (gitignored)
 ```

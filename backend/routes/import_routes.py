@@ -281,6 +281,46 @@ async def _do_import(request: Request, folder_path: str, force: bool = False):
         except Exception as e:
             logger.warning(f"Failed to load summary after import: {e}")
 
+    # Auto-update HR settings from imported data (if not locked by user)
+    if success and all_workouts:
+        try:
+            from data_processing.hr_zones import (
+                detect_hr_max_from_workouts, detect_hr_rest_from_recovery,
+                compute_default_hr_lthr, compute_zones_from_hr,
+                compute_default_hr_max, compute_default_hr_rest,
+                zone_boundaries, _age_from_profile,
+            )
+            from data_processing import _load_recovery_data
+            conn_hr = await db.get_db()
+            try:
+                current_hr = await db.hr_settings_get(conn_hr, uid)
+                if not current_hr or not current_hr.get("locked"):
+                    det_max = detect_hr_max_from_workouts(all_workouts)
+                    recovery_raw = _load_recovery_data(dd)
+                    det_rest = detect_hr_rest_from_recovery(recovery_raw)
+                    if det_max or det_rest:
+                        # Fall back to profile-calculated values for missing detections
+                        profile = await db.user_get_profile(conn_hr, uid)
+                        age = _age_from_profile(profile)
+                        sex = (profile or {}).get("sex", "male")
+                        hr_max = det_max or compute_default_hr_max(age, sex)
+                        hr_rest = det_rest or compute_default_hr_rest(sex)
+                        hr_lthr = compute_default_hr_lthr(hr_max)
+                        zones = compute_zones_from_hr(hr_max, hr_rest)
+                        from datetime import timezone as tz
+                        await db.hr_settings_upsert(conn_hr, uid, {
+                            "hr_max": hr_max, "hr_rest": hr_rest, "hr_lthr": hr_lthr,
+                            **zone_boundaries(zones),
+                            "locked": 0,
+                            "source": "apple_health",
+                            "updated_at": datetime.now(tz=tz.utc).isoformat(),
+                        })
+                        logger.info(f"Auto-updated HR settings for user {uid}: max={hr_max}, rest={hr_rest}")
+            finally:
+                await conn_hr.close()
+        except Exception as e:
+            logger.warning(f"Failed to auto-update HR settings: {e}")
+
     # Clean up stale insights (workout_num no longer matches date/type after renumbering)
     stale_cleaned = 0
     has_new = success and "No new workouts found" not in import_output

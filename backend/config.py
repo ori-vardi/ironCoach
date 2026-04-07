@@ -153,7 +153,7 @@ _BRICK_LABEL_MAP = {
     "other": "Other",
 }
 
-# ── HR Zone constants ────────────────────────────────────────────────────────
+# ── HR Zone constants (FALLBACK ONLY — per-user values in user_hr_settings table) ──
 _HR_ZONES = [
     ("Z1", 0, 130),
     ("Z2", 130, 143),
@@ -170,10 +170,10 @@ _HR_ZONE_COLORS = {
     "Z5": "#862248",
 }
 
-# ── Recovery (Banister) constants ────────────────────────────────────────────
-_HR_REST = 55       # estimated resting HR (male, 37y, endurance-trained)
-_HR_MAX = 182       # observed max from workout data
-_HR_LTHR = 162      # lactate threshold HR (~89% of max, endurance-trained male)
+# ── Recovery (Banister) constants (FALLBACK — per-user values in user_hr_settings) ──
+_HR_REST = 55       # fallback resting HR
+_HR_MAX = 182       # fallback max HR
+_HR_LTHR = 162      # fallback lactate threshold HR
 _TAU_ATL = 7.0      # acute training load time constant (days)
 _TAU_CTL = 42.0     # chronic training load time constant (days)
 _TSB_SCALE = 0.7    # scales TSB into the 0-100 recovery range

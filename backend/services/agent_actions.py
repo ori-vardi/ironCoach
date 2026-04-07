@@ -111,18 +111,30 @@ async def _handle_save_nutrition(params: dict, user_id: int) -> dict:
     finally:
         await conn.close()
 
-    # Check if meal triggers insight regeneration
+    # Check if meal triggers insight regeneration (skip if insight generation is already running)
     meal_date = params.get("date", "")
     meal_time = params.get("meal_time", "")
     meal_type = params.get("meal_type", "")
     regenerating = []
     if meal_date:
         try:
-            from routes.nutrition_routes import _check_meal_regeneration
-            regenerating = await _check_meal_regeneration(meal_date, meal_time, meal_type, user_id)
-            if regenerating:
-                from services.insights_engine import _maybe_regenerate_insight_for_date
-                asyncio.create_task(_maybe_regenerate_insight_for_date(meal_date, params, user_id=user_id))
+            from services.task_tracker import _insight_status, _active_tasks, _active_tasks_lock
+            # Skip regen if insight generation is already running for this user
+            insight_running = _insight_status.get("running") and _insight_status.get("user_id") == user_id
+            if not insight_running:
+                async with _active_tasks_lock:
+                    insight_running = any(
+                        tid.startswith("insight-") and tid.endswith(f"-user{user_id}")
+                        for tid in _active_tasks
+                    )
+            if insight_running:
+                logger.debug(f"Skipping meal regen for {meal_date} — insight generation already active for user {user_id}")
+            else:
+                from routes.nutrition_routes import _check_meal_regeneration
+                regenerating = await _check_meal_regeneration(meal_date, meal_time, meal_type, user_id)
+                if regenerating:
+                    from services.insights_engine import _maybe_regenerate_insight_for_date
+                    asyncio.create_task(_maybe_regenerate_insight_for_date(meal_date, params, user_id=user_id))
         except Exception as e:
             logger.warning(f"Meal regeneration check failed: {e}")
 
