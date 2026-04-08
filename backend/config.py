@@ -68,13 +68,6 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 REACT_DIST = PROJECT_ROOT / "frontend" / "dist"
 
 
-def _insights_file(user_id: int = 1) -> Path:
-    """Per-user insights summary file."""
-    return TRAINING_DATA / "users" / str(user_id) / "insights_summary.md"
-
-
-# Legacy single-file path (for migration)
-INSIGHTS_FILE = BASE_DIR / "data" / "insights_summary.md"
 
 # Claude CLI session storage location — computed dynamically from project path.
 # Claude CLI encodes /Users/foo/project → -Users-foo-project

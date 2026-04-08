@@ -853,13 +853,17 @@ async def insight_get(db, workout_num: int, user_id=None):
     return dict(row) if row else None
 
 
-async def insight_get_all(db, user_id=None):
+async def insight_get_all(db, user_id=None, since_date=None):
+    conditions, params = [], []
     if user_id:
-        cursor = await db.execute(
-            "SELECT * FROM workout_insights WHERE user_id = ? ORDER BY workout_date DESC", (user_id,))
-    else:
-        cursor = await db.execute(
-            "SELECT * FROM workout_insights ORDER BY workout_date DESC")
+        conditions.append("user_id = ?")
+        params.append(user_id)
+    if since_date:
+        conditions.append("workout_date >= ?")
+        params.append(since_date)
+    where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+    cursor = await db.execute(
+        f"SELECT * FROM workout_insights{where} ORDER BY workout_date DESC", params)
     return [dict(row) for row in await cursor.fetchall()]
 
 

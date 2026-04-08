@@ -55,9 +55,10 @@ Race details (distances, cutoffs, targets, course notes) are injected in the sys
 - Time-series data: timestamp, GPS, HR, pace, power, cadence
 - Use for split analysis, drift calculations, zone distributions
 
-### Insights Summary (`training_data/users/{uid}/insights_summary.md`)
-- AI-generated per-workout analyses
-- Read before discussing specific workouts — don't repeat, build on existing analysis
+### Workout Insights (DB: `workout_insights` table)
+- AI-generated per-workout analyses, queried from DB
+- Last 2 weeks injected into main-coach prompt automatically
+- Older insights available via DB query on demand
 
 ## Athlete Profile
 

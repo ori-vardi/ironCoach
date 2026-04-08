@@ -40,7 +40,7 @@ Complete list of architectural decisions and implementation patterns for the Iro
 18. **All LLM calls track user_id** — `_call_agent()`, `_call_claude_for_insight()`, chat WS all pass correct user_id. No defaults to user_id=1.
 19. **Session rotation** — both `_call_agent()` and chat WS rotate JSONL files at configurable threshold (default 800KB, `session_rotation_kb` setting). Prevents unbounded input token cost growth.
 20. **One-shot LLM calls use `--no-session-persistence`** — meal analysis creates no session file. Cheapest path.
-21. **No FYI LLM calls** — removed wasted fire-and-forget calls. Main-coach reads `insights_summary.md` for context instead.
+21. **No FYI LLM calls** — removed wasted fire-and-forget calls. Main-coach gets last 2 weeks of insights from DB directly (no file I/O).
 24. **Session rotation notifications** — both `_call_agent()` and chat WS create notification events when sessions are rotated, showing agent name and old size.
 45. **Token usage model tracking** — `model` column in `token_usage` enables per-model cost breakdown. Per Agent and Daily tabs group by agent+model. ModelBadge marks active model with `*`.
 46. **Daily drill-down** — clicking a daily row in Token Usage expands to show per-agent+model cost breakdown for that date. Uses `/api/usage/daily-agents` endpoint.
@@ -90,7 +90,7 @@ Complete list of architectural decisions and implementation patterns for the Iro
 - **Rotation context injection** (unified across `_call_agent()` and chat WS via `_build_rotation_context()`):
   - **run/swim/bike-coach**: last 5 workout insights for that discipline (from `workout_insights` DB)
   - **nutrition-coach**: last 15 meals (from `nutrition_log` DB)
-  - **main-coach**: reads `insights_summary.md` on first chat message
+  - **main-coach**: last 2 weeks of workout insights injected from DB into prompt
   - **Chat additionally**: configurable via `chat_summary_mode` setting — "ai" (default) uses Haiku to summarize last 10 messages (~$0.001), "raw" sends last 10 messages as-is (free)
 - **`--max-turns`**: specialists=3, synthesis=1, chat=unlimited
 - **`--no-session-persistence`**: used for one-shot calls (meal analysis) — no file, cheapest path

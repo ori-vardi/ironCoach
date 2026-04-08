@@ -9,7 +9,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query, Request
 
 import database as db
-from config import TRAINING_DATA, _SESSIONS_DIR, _insights_file, logger, _CATEGORY_AGENTS, INSIGHT_CUTOFF_DATE
+from config import TRAINING_DATA, _SESSIONS_DIR, logger, _CATEGORY_AGENTS, INSIGHT_CUTOFF_DATE
 from routes.deps import _require_admin, _require_ai, _uid, _user_data_dir
 from services.task_tracker import (
     _insight_status, _insight_status_lock,
@@ -17,7 +17,7 @@ from services.task_tracker import (
 )
 from services.insights_engine import (
     _generate_insights_batch, _generate_insight_for_workout, _generate_brick_insight,
-    _maybe_regenerate_insight_for_date, _rebuild_insights_file,
+    _maybe_regenerate_insight_for_date,
     _build_general_prompt, _call_claude_for_insight,
     _load_recovery_data_range, _split_plan_comparison,
     _extract_and_save_nutrition_from_notes,
@@ -470,7 +470,7 @@ async def insights_generate_one(num: int, request: Request):
             finally:
                 await conn.close()
 
-            await _rebuild_insights_file(uid)
+
             return {"insight": insight_text, "plan_comparison": plan_cmp, "brick_nums": brick_nums}
         finally:
             await _unregister_task(task_id)
@@ -491,7 +491,7 @@ async def insights_generate_one(num: int, request: Request):
             finally:
                 await conn.close()
 
-            await _rebuild_insights_file(uid)
+
             return {"insight": insight_text, "plan_comparison": plan_cmp}
         finally:
             await _unregister_task(task_id)
@@ -586,7 +586,6 @@ async def insights_fix_one(num: int, request: Request):
             await db.insight_save(conn, num, wdate, w.get("type", ""), qa_text, plan_cmp, user_id=uid)
         finally:
             await conn.close()
-        await _rebuild_insights_file(uid)
         logger.info(f"Fix-insight corrected #{num}")
     return {"changed": changed, "insight": qa_text}
 
@@ -689,7 +688,6 @@ async def insights_general_generate(request: Request):
         finally:
             await conn.close()
 
-        await _rebuild_insights_file(uid)
         return {"content": content}
     finally:
         await _unregister_task(task_id)

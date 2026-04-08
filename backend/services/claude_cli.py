@@ -269,7 +269,7 @@ async def _build_rotation_context(agent_name: str, user_id: int) -> str:
             return ""
 
     if not workout_types:
-        # main-coach: no discipline-specific context (reads insights_summary.md)
+        # main-coach: no discipline-specific context (insights injected in chat_handler)
         return ""
 
     try:

@@ -12,7 +12,7 @@ from pathlib import Path
 import database as db
 from config import (
     TRAINING_DATA, PROJECT_ROOT,
-    logger, _insights_file,
+    logger,
     PERIOD_CATEGORIES, _CATEGORY_AGENTS, _CATEGORY_TYPES,
     INSIGHT_COACH_PREAMBLE_TEMPLATE,
 )
@@ -719,63 +719,29 @@ async def _call_claude_for_insight(prompt: str, allowed_tools: list[str] | None 
         return None
 
 
-async def _rebuild_insights_file(user_id: int = 1):
-    """Rebuild the per-user insights summary markdown file from stored insights.
+async def get_recent_insights_text(user_id: int = 1) -> str:
+    """Return a compact text summary of the last 2 weeks of workout insights from DB.
 
-    This file is read by the coach chat so it has context about past analyses.
-    Written to training_data/users/{uid}/insights_summary.md.
+    Used to inject context into coach chat prompts directly (no file I/O).
     """
-    ifile = _insights_file(user_id)
     conn = await db.get_db()
     try:
-        insights = await db.insight_get_all(conn, user_id=user_id)
+        cutoff = (datetime.now() - timedelta(days=14)).strftime("%Y-%m-%d")
+        insights = await db.insight_get_all(conn, user_id=user_id, since_date=cutoff)
     finally:
         await conn.close()
 
     if not insights:
-        if ifile.exists():
-            ifile.unlink()
-        return
+        return ""
 
-    # Enrich with workout summary data
-    user_dir = TRAINING_DATA / "users" / str(user_id)
-    workouts = _enrich_workouts(_load_summary(user_dir if user_dir.exists() else None))
-    by_num = {int(w.get("workout_num", 0)): w for w in workouts}
-
-    lines = [
-        "# Workout Insights Summary",
-        f"_Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}_\n",
-    ]
+    lines = ["[RECENT WORKOUT INSIGHTS (last 2 weeks)]"]
     for ins in insights:
-        wnum = ins["workout_num"]
-        w = by_num.get(wnum, {})
-        disc = _classify_type(ins.get("workout_type", ""))
-        dur = _safe_float(w.get("duration_min"))
-        dist = w.get("distance_km", 0) or _workout_distance(w)
-        hr_avg = _safe_float(w.get("HeartRate_average"))
-
-        stats = []
-        if dur:
-            stats.append(f"{dur:.0f} min")
-        if dist:
-            if disc == "swim":
-                stats.append(f"{dist*1000:.0f} m")
-            else:
-                stats.append(f"{dist:.2f} km")
-        if hr_avg:
-            stats.append(f"HR avg {hr_avg:.0f}")
-        stats_str = " | ".join(stats)
-
-        lines.append(f"## #{wnum} — {ins['workout_type']} — {ins['workout_date']}")
-        if stats_str:
-            lines.append(f"_{stats_str}_\n")
+        lines.append(f"## #{ins['workout_num']} — {ins['workout_type']} — {ins['workout_date']}")
         lines.append(ins["insight"])
         if ins.get("plan_comparison"):
             lines.append(ins["plan_comparison"])
-        lines.append("")  # blank line separator
-
-    ifile.parent.mkdir(parents=True, exist_ok=True)
-    ifile.write_text("\n".join(lines), encoding="utf-8")
+        lines.append("")
+    return "\n".join(lines)
 
 
 async def _generate_insights_batch(since_date: str, to_date: str = "", user_id: int = 1, user_context: dict = None, user_files: dict = None, lang: str = "en", workout_nums: list = None, include_raw_data: bool = False, include_raw_data_nums: set = None):
@@ -1221,7 +1187,6 @@ async def _generate_insights_batch(since_date: str, to_date: str = "", user_id: 
                 async with _insight_status_lock:
                     _insight_status["failed"] = _insight_status.get("failed", 0) + 1
 
-        await _rebuild_insights_file(user_id)
     except Exception as e:
         import traceback
         logger.error(f"Batch insight generation error: {e}\n{traceback.format_exc()}")
@@ -1374,7 +1339,6 @@ async def _maybe_regenerate_insight_for_date(date_str: str, meal_data: dict = No
                             await db.insight_save(conn, bw_num, bw_date, bw.get("type", ""),
                                                   insight_text, plan_cmp, user_id=user_id)
                             regenerated_wnums.add(bw_num)
-                        await _rebuild_insights_file(user_id)
                         logger.debug(f"Regenerated brick insight for workouts {brick_nums_list}")
                         entry = {
                             "label": f"Brick insight #{'/'.join(str(n) for n in brick_nums_list)} regenerated",
@@ -1402,7 +1366,6 @@ async def _maybe_regenerate_insight_for_date(date_str: str, meal_data: dict = No
                             conn, wnum, wdate, w.get("type", ""),
                             insight_text, plan_cmp, user_id=user_id
                         )
-                        await _rebuild_insights_file(user_id)
                         logger.debug(f"Regenerated insight for workout #{wnum}")
                         wtype = w.get("type", "Workout")
                         entry = {

@@ -32,7 +32,7 @@ TEXT_SUFFIXES = frozenset({
 import database as db
 from config import (
     _SESSIONS_DIR, PROJECT_ROOT,
-    logger, _insights_file, coach_session_id,
+    logger, coach_session_id,
 )
 from services.task_tracker import (
     _chat_procs, _chat_streaming, _chat_ws_registry, _chat_bg_tasks,
@@ -410,11 +410,15 @@ async def _handle_chat_message(websocket: WebSocket, data: dict, ws_user_id: int
             except Exception as e:
                 logger.warning(f"Could not build chat preamble: {e}")
 
-        # First message: add context for new sessions (coach mode only)
-        user_insights = _insights_file(ws_user_id)
-        if chat_mode != "dev" and agent_name == "main-coach" and user_insights.exists():
-            safe_prompt = (f"[AI-generated workout insights are at: {user_insights}. "
-                      "Read it for context about past analyses.]\n\n" + safe_prompt)
+        # Inject recent insights directly for coach sessions (no file I/O)
+        if chat_mode != "dev" and agent_name == "main-coach":
+            from services.insights_engine import get_recent_insights_text
+            try:
+                insights_text = await get_recent_insights_text(ws_user_id)
+                if insights_text:
+                    safe_prompt = insights_text + "\n\n" + safe_prompt
+            except Exception as e:
+                logger.warning(f"Could not load recent insights: {e}")
         safe_prompt = history_prefix + safe_prompt
         cmd = [cli, *bare_flag, "--agent", agent_name, "--session-id", agent_session_uuid,
                "-p", safe_prompt, "--output-format", "stream-json", "--verbose",
