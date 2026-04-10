@@ -139,19 +139,23 @@ export default function WorkoutDetailModal({ workoutNum: initialWorkoutNum, open
     setInsightFiles([])
     setIncludeRawData(false)
 
-    // Fire-and-forget: close modal, track via notification bell
+    // Show generating state in modal; runs in background if user closes
+    setGenerating(true)
     const taskId = `insight-w${workoutNum}`
-    notifyLlmStart(taskId, `${t('detail_insight')} #${workoutNum}`, `workout:${workoutNum}`)
-    onClose()
+    const capturedNum = workoutNum
+    notifyLlmStart(taskId, `${t('detail_insight')} #${capturedNum}`, `workout:${capturedNum}`)
 
     let genErr = null
-    api(`/api/insights/generate/${workoutNum}`, {
+    api(`/api/insights/generate/${capturedNum}`, {
       method: 'POST',
       body: JSON.stringify(body),
+    }).then(result => {
+      if (result?.insight) setInsight(result)
     }).catch(e => {
       genErr = e.message
       console.error('Insight generation failed:', e)
     }).finally(() => {
+      setGenerating(false)
       notifyLlmEnd(taskId, genErr)
     })
   }
@@ -462,10 +466,13 @@ function OverviewTab({ meta, info, pts, sections, workoutNum, workouts, insight,
   // Brick info
   const brickPartners = brickInfo?.workouts?.filter(bw => bw.workout_num !== Number(workoutNum)) || []
 
+  const isSwim = classifyType(wSummary?.type) === 'swim'
   const hasGPS = useMemo(() =>
-    pts.some((p) => p.lat && p.lon && parseFloat(p.lat)) ||
-    sections?.hr_colored_segments?.length > 1
-  , [pts, sections])
+    !isSwim && (
+      pts.some((p) => p.lat && p.lon && parseFloat(p.lat)) ||
+      sections?.hr_colored_segments?.length > 1
+    )
+  , [pts, sections, isSwim])
 
   return (
     <>
@@ -579,19 +586,25 @@ function OverviewTab({ meta, info, pts, sections, workoutNum, workouts, insight,
       <div className="insight-card" style={{ marginBottom: 16 }}>
         {insightLoading ? (
           <div className="insight-card-body text-dim">{t('detail_loading_insight')}</div>
+        ) : generating ? (
+          <div className="insight-card-body" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <LoadingSpinner size={18} />
+            <span className="text-dim">{t('detail_generating_insight')}</span>
+            <button className="btn btn-sm btn-red" style={{ marginInlineStart: 'auto' }} onClick={onStop}>{t('stop')}</button>
+          </div>
         ) : insight?.insight ? (
-          <>
+          <div dir={hasHebrew(insight.insight) ? 'rtl' : undefined}>
             <div className="insight-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h4 style={{ color: 'var(--accent)' }}>{t('detail_coach_insight')}</h4>
               <button className="btn btn-sm btn-outline" onClick={onDiscuss} disabled={!aiEnabled}>{t('detail_discuss')}</button>
             </div>
-            <div className="insight-card-body" dir={hasHebrew(insight.insight) ? 'rtl' : undefined}>
+            <div className="insight-card-body">
               <div dangerouslySetInnerHTML={md(insight.insight)} />
               {insight.plan_comparison && (
                 <div className="insight-plan-cmp" dangerouslySetInnerHTML={md(insight.plan_comparison)} />
               )}
             </div>
-          </>
+          </div>
         ) : (
           <div className="insight-card-body">
             <InsightContextInput t={t} insightNote={insightNote} setInsightNote={setInsightNote} insightFiles={insightFiles} setInsightFiles={setInsightFiles} insightFileRef={insightFileRef} uploadInsightFile={uploadInsightFile} generating={generating} onGenerate={onGenerate} onStop={onStop} aiEnabled={aiEnabled} includeRawData={includeRawData} setIncludeRawData={setIncludeRawData} />

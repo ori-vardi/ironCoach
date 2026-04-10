@@ -1109,7 +1109,8 @@ async def _generate_insights_batch(since_date: str, to_date: str = "", user_id: 
                 )
 
                 _insight_status["current"] = f"Brick #{'/'.join(str(n) for n in brick_nums)} → main-coach synthesis"
-                result_text, _ = await _call_agent("main-coach", synthesis_prompt, f"main-coach-synthesis-user{user_id}", max_turns=3, user_id=user_id)
+                brick_session = f"insight-synthesis-brick-{'-'.join(str(n) for n in brick_nums)}-user{user_id}"
+                result_text, _ = await _call_agent("main-coach", synthesis_prompt, brick_session, max_turns=3, user_id=user_id)
 
                 if result_text:
                     result_text, plan_cmp = _split_plan_comparison(result_text)
@@ -1169,7 +1170,8 @@ async def _generate_insights_batch(since_date: str, to_date: str = "", user_id: 
             )
 
             _insight_status["current"] = f"#{wnum} → main-coach synthesis"
-            result_text, _ = await _call_agent("main-coach", synthesis_prompt, f"main-coach-synthesis-user{user_id}", max_turns=1, user_id=user_id)
+            synthesis_session = f"insight-synthesis-{wnum}-user{user_id}"
+            result_text, _ = await _call_agent("main-coach", synthesis_prompt, synthesis_session, max_turns=3, user_id=user_id)
 
             if result_text:
                 result_text, plan_cmp = _split_plan_comparison(result_text)
@@ -1675,7 +1677,7 @@ async def _generate_insight_for_workout(w: dict, plans: list, data_dir: Path = N
 
     # Use unique session per workout to avoid duplicate detection from persistent memory
     synthesis_session = f"insight-synthesis-{wnum}-user{user_id}"
-    synthesis_text, _ = await _call_agent("main-coach", synthesis_input, synthesis_session, max_turns=1, user_id=user_id)
+    synthesis_text, _ = await _call_agent("main-coach", synthesis_input, synthesis_session, max_turns=2, user_id=user_id)
 
     if not synthesis_text:
         # Fallback: use first specialist output directly

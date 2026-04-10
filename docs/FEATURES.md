@@ -402,9 +402,9 @@ The Overview page shows a Readiness Score (0–100) that combines multiple recov
 | Component | Weight | Data Window | What It Measures |
 |:----------|:-------|:------------|:-----------------|
 | **TSB (Form)** | 30% | CTL 42-day, ATL 7-day | Training stress balance — fitness minus fatigue (Banister impulse-response model) |
-| **HRV** | 25% | 7-day trend | Heart rate variability trend vs baseline |
-| **Sleep** | 20% | 3-day average | Sleep duration relative to 7-8h target |
-| **Resting HR** | 15% | 7-day trend | Resting heart rate trend vs baseline |
+| **HRV** | 25% | 8-day baseline | HRV ratio vs baseline: at baseline = 75, above = up to 100 (fresh), 30%+ below = concern |
+| **Sleep** | 20% | Latest night | Sleep duration: 7h = 100, 5h = 0, linear between |
+| **Resting HR** | 15% | 8-day baseline | RHR deviation from baseline: at baseline = 75, below = up to 100 (fresh), above = declining |
 | **Training Load** | 10% | 7-day TRIMP | Recent training load appropriateness |
 
 The score uses the Banister impulse-response model for TSB: CTL (fitness) uses a 42-day exponential decay, ATL (fatigue) uses a 7-day decay. These windows are standard in sports science for modeling the delayed fitness response vs rapid fatigue response to training.

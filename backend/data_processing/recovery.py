@@ -449,6 +449,10 @@ def _compute_readiness_score(
       RHR 15% (Buchheit 2014), ACWR 10% (Gabbett 2016).
     Missing biomarkers redistribute weight proportionally.
 
+    Scoring philosophy: "at baseline" = 75 (normal), not 100 (peak).
+      HRV: ratio 0.7 → 0, 1.0 → 75, 1.1 → 100
+      RHR: deviation 0 → 75, -2.5bpm → 100, +5bpm → 25
+
     Returns {score, components} where each component has {score, weight, ...}.
     """
     W_TSB, W_HRV, W_SLEEP, W_RHR, W_LOAD = 0.30, 0.25, 0.20, 0.15, 0.10
@@ -468,33 +472,33 @@ def _compute_readiness_score(
         components["atl_ctl"] = {"score": round(load_score, 1), "weight": W_LOAD, "ratio": round(ratio, 2)}
         available_weight += W_LOAD
 
-    # 3. RHR trend
+    # 3. RHR trend — at baseline = 75 (normal), below baseline = up to 100 (fresh)
     if len(recovery_data) >= 3:
         rhr_values = [(r.get("resting_hr"), r.get("date", "")) for r in recovery_data[-8:] if r.get("resting_hr")]
         if len(rhr_values) >= 2:
             latest, latest_date = rhr_values[-1]
             baseline = sum(v for v, _ in rhr_values[:-1]) / len(rhr_values[:-1])
             deviation = latest - baseline
-            rhr_score = max(0, min(100, 100 - deviation * 10))
+            rhr_score = max(0, min(100, 75 - deviation * 10))
             components["rhr"] = {"score": round(rhr_score, 1), "weight": W_RHR, "value": round(latest), "baseline": round(baseline), "date": latest_date}
             available_weight += W_RHR
 
-    # 4. HRV trend
+    # 4. HRV trend — at baseline (ratio=1.0) = 75, above = up to 100 (fresh)
     if len(recovery_data) >= 3:
-        hrv_values = [(r.get("hrv_ms"), r.get("date", "")) for r in recovery_data[-8:] if r.get("hrv_ms")]
+        hrv_values = [(r.get("hrv_sdnn_ms") or r.get("hrv_ms"), r.get("date", "")) for r in recovery_data[-8:] if r.get("hrv_sdnn_ms") or r.get("hrv_ms")]
         if len(hrv_values) >= 2:
             latest, latest_date = hrv_values[-1]
             baseline = sum(v for v, _ in hrv_values[:-1]) / len(hrv_values[:-1])
             if baseline > 0:
                 ratio = latest / baseline
-                hrv_score = max(0, min(100, (ratio - 0.7) / 0.3 * 100))
+                hrv_score = max(0, min(100, (ratio - 0.7) / 0.4 * 100))
                 components["hrv"] = {"score": round(hrv_score, 1), "weight": W_HRV, "value": round(latest), "baseline": round(baseline), "date": latest_date}
                 available_weight += W_HRV
 
     # 5. Sleep quality
     if recovery_data:
         for r in reversed(recovery_data):
-            sleep_min = r.get("sleep_total", 0)
+            sleep_min = r.get("sleep_total_min") or r.get("sleep_total", 0)
             if sleep_min and sleep_min > 0:
                 if sleep_min >= 420:
                     sleep_score = 100.0
