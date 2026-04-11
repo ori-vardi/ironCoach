@@ -1,24 +1,35 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 import { useChat } from '../../context/ChatContext'
 
 export default function Modal({ open = true, onClose, title, children, small = false, wide = false, onBack }) {
   const { chatOpen } = useChat()
+  const modalRef = useRef(null)
 
+  // Auto-focus the modal container so it can receive keyboard events
   useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation()
-        onClose?.()
-      }
+    if (open !== false && modalRef.current) {
+      modalRef.current.focus()
     }
-    document.addEventListener('keydown', onKey, true) // capture phase to beat other ESC handlers
-    return () => document.removeEventListener('keydown', onKey, true)
+  }, [open])
+
+  const handleKeyDown = useCallback((e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
+      onClose?.()
+    }
   }, [onClose])
 
   if (open === false) return null
 
   return (
-    <div className={`modal${chatOpen ? ' modal-with-chat' : ''}`}>
+    <div
+      ref={modalRef}
+      className={`modal${chatOpen ? ' modal-with-chat' : ''}`}
+      onKeyDown={handleKeyDown}
+      tabIndex={-1}
+      style={{ outline: 'none' }}
+    >
       <div className="modal-backdrop" onClick={chatOpen ? undefined : onClose} />
       <div className={`modal-content${small ? ' modal-sm' : ''}${wide ? ' modal-wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby="modal-title">
         <div className="modal-header">

@@ -481,7 +481,7 @@ export default function TrainingPlanPage() {
       </Modal>
 
       {/* Add/Edit Form Modal */}
-      <Modal open={formOpen} onClose={() => setFormOpen(false)}
+      <Modal open={formOpen} onClose={() => setFormOpen(false)} wide
         title={editingId
           ? <input type="text" className="input-full modal-title-input" dir="auto" value={formData.title}
               placeholder={t('plan_title_placeholder')}
@@ -537,11 +537,11 @@ export default function TrainingPlanPage() {
             </select>
           </div>
         </div>
-        <div className="form-group" style={{ position: 'relative' }}>
+        <div className="form-group" style={{ position: 'relative', flex: '1 1 auto', display: 'flex', flexDirection: 'column' }}>
           <label>{t('description')}</label>
-          <textarea rows={15} dir="auto" value={formData.description}
+          <textarea dir="auto" value={formData.description}
             onChange={e => setFormData(f => ({ ...f, description: e.target.value }))}
-            onInput={autoGrow} style={{ overflow: 'hidden' }} />
+            style={{ overflow: 'auto', flex: '1 1 auto', minHeight: '200px', resize: 'vertical' }} />
           <button
             type="button"
             className="expand-text-btn textarea-expand"
