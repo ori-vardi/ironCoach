@@ -467,12 +467,10 @@ function OverviewTab({ meta, info, pts, sections, workoutNum, workouts, insight,
   const brickPartners = brickInfo?.workouts?.filter(bw => bw.workout_num !== Number(workoutNum)) || []
 
   const isSwim = classifyType(wSummary?.type) === 'swim'
-  const hasGPS = useMemo(() =>
-    !isSwim && (
-      pts.some((p) => p.lat && p.lon && parseFloat(p.lat)) ||
-      sections?.hr_colored_segments?.length > 1
-    )
-  , [pts, sections, isSwim])
+  const hasGPS = !isSwim && (
+    pts.some((p) => p.lat && p.lon && parseFloat(p.lat)) ||
+    sections?.hr_colored_segments?.length > 1
+  )
 
   return (
     <>
@@ -505,22 +503,17 @@ function OverviewTab({ meta, info, pts, sections, workoutNum, workouts, insight,
         </div>
       )}
 
-      {/* GPS corrections banner */}
+      {/* GPS corrections banner — compact single line */}
       {gpsCorrections && (
-        <div className="card" style={{ borderInlineStart: '3px solid var(--yellow)', padding: '10px 14px', marginBottom: 12, fontSize: '0.85em' }}>
-          <strong style={{ color: 'var(--yellow)' }}>⚠ GPS {t('gps_corrections_found') || 'corrections applied'}</strong>
-          <div className="text-dim" style={{ marginTop: 4 }}>
-            {gpsCorrections.anomalies?.length || 0} anomalies detected, {gpsCorrections.corrected_count} points corrected
-          </div>
-          <div style={{ marginTop: 4, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-            {gpsCorrections.original_elevation_m != null && (
-              <span>Elevation: <s className="text-dim">{Math.round(gpsCorrections.original_elevation_m)}m</s> → <strong>{Math.round(gpsCorrections.corrected_elevation_m)}m*</strong></span>
-            )}
-            {gpsCorrections.original_gps_distance_km != null && (
-              <span>GPS Distance: <s className="text-dim">{gpsCorrections.original_gps_distance_km.toFixed(2)}km</s> → <strong>{gpsCorrections.corrected_gps_distance_km.toFixed(2)}km*</strong></span>
-            )}
-          </div>
-          <div className="text-dim" style={{ marginTop: 4, fontSize: '0.9em' }}>* corrected values — bad GPS points removed from calculations</div>
+        <div style={{ borderInlineStart: '3px solid var(--yellow)', padding: '6px 12px', marginBottom: 8, fontSize: '0.8em', display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          <strong style={{ color: 'var(--yellow)' }}>⚠ GPS</strong>
+          <span className="text-dim">{gpsCorrections.corrected_count} pts corrected</span>
+          {gpsCorrections.original_elevation_m != null && (
+            <span>Elev: <s className="text-dim">{Math.round(gpsCorrections.original_elevation_m)}m</s> → <strong>{Math.round(gpsCorrections.corrected_elevation_m)}m*</strong></span>
+          )}
+          {gpsCorrections.original_gps_distance_km != null && (
+            <span>Dist: <s className="text-dim">{gpsCorrections.original_gps_distance_km.toFixed(2)}km</s> → <strong>{gpsCorrections.corrected_gps_distance_km.toFixed(2)}km*</strong></span>
+          )}
         </div>
       )}
 
@@ -650,15 +643,38 @@ function FlyToPoint({ lat, lon, zoom = 15 }) {
   return null
 }
 
+function FitBounds({ bounds, expanded }) {
+  const map = useMap()
+  useEffect(() => {
+    // Resize the leaflet container to match its parent
+    const el = map.getContainer()
+    if (el) el.style.height = '100%'
+    setTimeout(() => {
+      map.invalidateSize()
+      if (bounds?.length > 1) map.fitBounds(bounds, { padding: [30, 30] })
+    }, 150)
+  }, [bounds, expanded, map])
+  return null
+}
+
 /* ── GPS Map ── */
 function DetailMap({ pts, sections, badClusters }) {
   const { t } = useI18n()
   const gps = useMemo(() => pts.filter((p) => p.lat && p.lon && parseFloat(p.lat)), [pts])
   const mapRef = useRef(null)
+  const [expanded, setExpanded] = useState(false)
 
   const segs = sections?.hr_colored_segments
   const sectionsList = sections?.sections
   const intervals = sections?.intervals
+
+  // Build set of anomaly coordinates for exclusion from bounds
+  const badCoordSet = useMemo(() => {
+    if (!badClusters?.length) return null
+    const s = new Set()
+    for (const c of badClusters) s.add(`${c.lat.toFixed(5)},${c.lon.toFixed(5)}`)
+    return s
+  }, [badClusters])
 
   // Build polyline segments colored by HR zone
   const polylines = useMemo(() => {
@@ -690,10 +706,24 @@ function DetailMap({ pts, sections, badClusters }) {
     return [{ positions: gps.map((p) => [parseFloat(p.lat), parseFloat(p.lon)]), color: COLORS.run, data: null }]
   }, [gps, segs])
 
+  // Bounds: exclude anomaly clusters so map focuses on the real route
   const bounds = useMemo(() => {
-    const coords = segs?.length ? segs.map((s) => [s.lat, s.lon]) : gps.map((p) => [parseFloat(p.lat), parseFloat(p.lon)])
+    let coords
+    if (segs?.length) {
+      coords = badCoordSet
+        ? segs.filter(s => !badCoordSet.has(`${s.lat.toFixed(5)},${s.lon.toFixed(5)}`)).map(s => [s.lat, s.lon])
+        : segs.map(s => [s.lat, s.lon])
+    } else {
+      coords = badCoordSet
+        ? gps.filter(p => !badCoordSet.has(`${parseFloat(p.lat).toFixed(5)},${parseFloat(p.lon).toFixed(5)}`)).map(p => [parseFloat(p.lat), parseFloat(p.lon)])
+        : gps.map(p => [parseFloat(p.lat), parseFloat(p.lon)])
+    }
+    // Fall back to all coords if filtering removed everything
+    if (!coords.length) {
+      coords = segs?.length ? segs.map(s => [s.lat, s.lon]) : gps.map(p => [parseFloat(p.lat), parseFloat(p.lon)])
+    }
     return coords.length ? coords : [[32.8, 35.5]]
-  }, [gps, segs])
+  }, [gps, segs, badCoordSet])
 
   const kmMarkers = useMemo(() => {
     if (!sectionsList) return []
@@ -712,58 +742,73 @@ function DetailMap({ pts, sections, badClusters }) {
     iconAnchor: [12, 12],
   })
 
+  // ESC to close fullscreen
+  useEffect(() => {
+    if (!expanded) return
+    const handler = (e) => { if (e.key === 'Escape') setExpanded(false) }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [expanded])
 
+  const mapHeight = expanded ? '70vh' : 700
 
   return (
-    <div className="detail-map" style={{ position: 'relative', marginBottom: 16 }}>
-      <MapContainer
-        ref={mapRef}
-        bounds={bounds}
-        style={{ height: 350, width: '100%' }}
-        scrollWheelZoom={true}
-        whenReady={(e) => setTimeout(() => e.target.invalidateSize(), 200)}
-      >
-        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="OSM" />
-        {polylines.map((seg, i) => (
-          <Polyline key={i} positions={seg.positions} pathOptions={{ color: seg.color, weight: 3, opacity: 0.9 }}>
-            {seg.data && (seg.data.hr || seg.data.pace) && (
-              <Tooltip sticky>
-                {seg.data.hr && <span>HR: {Math.round(seg.data.hr)} bpm<br /></span>}
-                {seg.data.pace && seg.data.pace < 20 && (
-                  <span>Pace: {Math.floor(seg.data.pace)}:{String(Math.round((seg.data.pace % 1) * 60)).padStart(2, '0')}/km<br /></span>
-                )}
-                {seg.data.elevation && <span>Elev: {seg.data.elevation}m</span>}
+    <div className={`detail-map${expanded ? ' interval-map-expanded' : ''}`}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+        <div className="map-hr-legend" style={{ position: 'static', background: 'none', padding: 0, display: 'flex', gap: 8, fontSize: 11 }}>
+          {Object.entries(HR_ZONE_LABELS).map(([z, label]) => (
+            <span key={z} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+              <span style={{ display: 'inline-block', width: 12, height: 3, background: HR_ZONE_COLORS[z] }} />
+              {label}
+            </span>
+          ))}
+        </div>
+        <button className="btn btn-sm btn-icon" onClick={() => setExpanded(!expanded)} title={expanded ? 'Collapse' : 'Expand'}>
+          {expanded ? '↙' : '↗'}
+        </button>
+      </div>
+      <div style={{ height: mapHeight, borderRadius: 'var(--radius)', overflow: 'hidden' }}>
+        <MapContainer
+          ref={mapRef}
+          bounds={bounds}
+          boundsOptions={{ padding: [30, 30] }}
+          style={{ height: '100%', width: '100%' }}
+          scrollWheelZoom={true}
+          whenReady={(e) => setTimeout(() => e.target.invalidateSize(), 200)}
+        >
+          <FitBounds bounds={bounds} expanded={expanded} />
+          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="OSM" />
+          {polylines.map((seg, i) => (
+            <Polyline key={i} positions={seg.positions} pathOptions={{ color: seg.color, weight: 3, opacity: 0.9 }}>
+              {seg.data && (seg.data.hr || seg.data.pace) && (
+                <Tooltip sticky>
+                  {seg.data.hr && <span>HR: {Math.round(seg.data.hr)} bpm<br /></span>}
+                  {seg.data.pace && seg.data.pace < 20 && (
+                    <span>Pace: {Math.floor(seg.data.pace)}:{String(Math.round((seg.data.pace % 1) * 60)).padStart(2, '0')}/km<br /></span>
+                  )}
+                  {seg.data.elevation && <span>Elev: {seg.data.elevation}m</span>}
+                </Tooltip>
+              )}
+            </Polyline>
+          ))}
+          {kmMarkers.map((m, i) => (
+            <Marker key={i} position={m.position} icon={kmIcon(m.label)}>
+              <Tooltip>
+                <b>{t('detail_split')} {m.label}</b>
+                {m.pace && <><br />Pace: {m.pace}</>}
+                {m.hr && <><br />HR: {Math.round(m.hr)} bpm</>}
               </Tooltip>
-            )}
-          </Polyline>
-        ))}
-        {kmMarkers.map((m, i) => (
-          <Marker key={i} position={m.position} icon={kmIcon(m.label)}>
-            <Tooltip>
-              <b>{t('detail_split')} {m.label}</b>
-              {m.pace && <><br />Pace: {m.pace}</>}
-              {m.hr && <><br />HR: {Math.round(m.hr)} bpm</>}
-            </Tooltip>
-          </Marker>
-        ))}
-        {badClusters?.map((c, i) => (
-          <CircleMarker key={`bad-${i}`} center={[c.lat, c.lon]} radius={10}
-            pathOptions={{ color: '#ff5370', fillColor: '#ff5370', fillOpacity: 0.5, weight: 2 }}>
-            <Tooltip>
-              <b>GPS Anomaly #{i + 1}</b><br />{c.count} bad points
-            </Tooltip>
-          </CircleMarker>
-        ))}
-      </MapContainer>
-      {/* HR Legend */}
-      <div className="map-hr-legend">
-        <div className="legend-title">{t('detail_hr_zones')}</div>
-        {Object.entries(HR_ZONE_LABELS).map(([z, label]) => (
-          <div key={z} className="legend-item">
-            <span className="legend-swatch" style={{ background: HR_ZONE_COLORS[z] }} />
-            {label}
-          </div>
-        ))}
+            </Marker>
+          ))}
+          {badClusters?.map((c, i) => (
+            <CircleMarker key={`bad-${i}`} center={[c.lat, c.lon]} radius={10}
+              pathOptions={{ color: '#ff5370', fillColor: '#ff5370', fillOpacity: 0.5, weight: 2 }}>
+              <Tooltip>
+                <b>GPS Anomaly #{i + 1}</b><br />{c.count} bad points
+              </Tooltip>
+            </CircleMarker>
+          ))}
+        </MapContainer>
       </div>
     </div>
   )

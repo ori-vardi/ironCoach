@@ -105,13 +105,23 @@ def _workout_distance(w: dict) -> float:
 
     IMPORTANT: CSV stores swimming distance in METERS (DistanceSwimming_sum with unit="m"),
     while running/cycling are stored in km. This function converts all to km for consistency.
+    Uses discipline to pick the right distance type first (e.g. cycling distance for bike).
     """
-    conversions = [
+    all_conversions = [
         ("DistanceWalkingRunning_sum", "DistanceWalkingRunning_unit"),
         ("DistanceCycling_sum", "DistanceCycling_unit"),
         ("DistanceSwimming_sum", "DistanceSwimming_unit"),  # CSV stores in meters!
     ]
-    for val_col, unit_col in conversions:
+    # Prioritize the distance type matching the discipline
+    disc = w.get("discipline", "")
+    if disc == "bike":
+        order = [1, 0, 2]  # Cycling first
+    elif disc == "swim":
+        order = [2, 0, 1]  # Swimming first
+    else:
+        order = [0, 1, 2]  # WalkingRunning first (default for run/other)
+    for idx in order:
+        val_col, unit_col = all_conversions[idx]
         val = _safe_float(w.get(val_col))
         if val > 0:
             unit = (w.get(unit_col) or "km").strip().lower()

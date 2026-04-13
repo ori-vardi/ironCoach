@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 
-export default function InfoTip({ text }) {
+export default function InfoTip({ text, children }) {
   const [pos, setPos] = useState(null)
   const [pinned, setPinned] = useState(false)
   const ref = useRef(null)
@@ -78,6 +78,7 @@ export default function InfoTip({ text }) {
       style={{ display: 'block', top: pos.top, left: pos.left }}
     >
       {parseInfoLines(text)}
+      {children}
     </div>,
     document.body
   )

@@ -55,7 +55,7 @@ const ARC_SWEEP = 270
 
 /**
  * Circular 270° readiness gauge with animated needle and score centered inside.
- * Props: { score: 0-100, components: {}, compact?: boolean }
+ * Props: { score: 0-100, components: {}, compact?: boolean, event?: object, tsb?: number }
  */
 export default function ReadinessGauge({ score = 50, components = {}, compact = false, infoTip = '' }) {
   const { t } = useI18n()

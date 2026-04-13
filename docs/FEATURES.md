@@ -56,6 +56,7 @@ The export pipeline (`scripts/export_to_csv.py`) is optimized for large Apple He
 - **Bisect workout matching** — O(log N) binary search instead of O(N) linear scan per record
 - **String-based early skip** — training-only records outside the workout time window are rejected via string comparison without date parsing
 - **Parallel CSV writing** — `ThreadPoolExecutor` writes per-workout CSVs in parallel (4 workers)
+- **Multisport splitting** — `SwimBikeRun` workouts are auto-split into separate per-leg workouts (swim, bike, run). Activity type is inferred from per-leg statistics. GPX route files are matched to legs by time overlap. Transition legs are skipped.
 
 ---
 
@@ -113,7 +114,7 @@ For each workout, the system calculates and stores:
 - **Corrected elevation gain** — excluding flagged anomalies
 - **Anomaly count** — number of flagged GPS points
 
-On workout maps (Leaflet), flagged GPS points are excluded so the route displays cleanly. Indoor workouts have no GPS data and show no map.
+On workout maps (Leaflet), flagged GPS points are excluded so the route displays cleanly. Indoor workouts have no GPS data and show no map. The Overview tab map shows the route colored by HR zone with KM markers at each split. Expand button (↗) opens the map as a near-fullscreen overlay (same pattern as the Detailed Data interval map). Bad GPS clusters are shown as red circles.
 
 ### GPS from GPX Route Files
 
@@ -166,7 +167,7 @@ A "brick" session is when you do two different disciplines back-to-back (e.g., b
 
 IronCoach **auto-detects bricks** by finding workouts of different disciplines that start within 30 minutes of each other. This is code-based detection (no AI involved):
 
-- Detected bricks are displayed as grouped sessions in the workout tables
+- Detected bricks are displayed as grouped sessions in the workout tables with a 🧱 icon next to the workout number
 - **Combined insight**: all workouts in a brick share ONE combined insight that analyzes the full session — transitions, fatigue management, and per-discipline observations
 - Brick detection is view-only — it doesn't merge or modify the underlying workout data
 - **Post-import brick display**: detected bricks are shown in the post-import modal (purple border) before merge candidates, so you can see which sessions will get combined analysis

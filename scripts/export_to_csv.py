@@ -250,6 +250,105 @@ def parse_gpx(gpx_path):
 
 # ── Pass 1: Parse workouts ──────────────────────────────────────────────────
 
+def _infer_activity_type(statistics):
+    """Infer HKWorkoutActivityType from WorkoutActivity statistics."""
+    stat_types = {s.get("type", "") for s in statistics}
+    # Running-specific metrics (not just DistanceWalkingRunning which appears in all legs)
+    _RUNNING_METRICS = {
+        "HKQuantityTypeIdentifierRunningSpeed",
+        "HKQuantityTypeIdentifierRunningPower",
+        "HKQuantityTypeIdentifierRunningGroundContactTime",
+        "HKQuantityTypeIdentifierRunningVerticalOscillation",
+        "HKQuantityTypeIdentifierRunningStrideLength",
+    }
+    # Check for swimming first (most specific)
+    if any("Swimming" in t for t in stat_types):
+        return "HKWorkoutActivityTypeSwimming"
+    # Running-specific metrics are unique to running
+    has_running = bool(stat_types & _RUNNING_METRICS)
+    has_cycling = "HKQuantityTypeIdentifierDistanceCycling" in stat_types
+    if has_running and not has_cycling:
+        return "HKWorkoutActivityTypeRunning"
+    if has_cycling and not has_running:
+        return "HKWorkoutActivityTypeCycling"
+    # Both present — compare distances to decide
+    if has_running and has_cycling:
+        dist_run = dist_cycle = 0.0
+        for s in statistics:
+            if s.get("type") == "HKQuantityTypeIdentifierDistanceWalkingRunning":
+                dist_run = float(s.get("sum", 0))
+            elif s.get("type") == "HKQuantityTypeIdentifierDistanceCycling":
+                dist_cycle = float(s.get("sum", 0))
+        return "HKWorkoutActivityTypeCycling" if dist_cycle > dist_run else "HKWorkoutActivityTypeRunning"
+    # Fallback: walking/running distance → Running
+    if "HKQuantityTypeIdentifierDistanceWalkingRunning" in stat_types:
+        return "HKWorkoutActivityTypeRunning"
+    return "HKWorkoutActivityTypeOther"
+
+
+def _split_multisport(w, routes_with_times):
+    """Split a SwimBikeRun workout into separate per-leg workouts.
+
+    Skips transition legs (no WOMultiSportLegNumber metadata).
+    Each leg gets its own stats, events, metadata, and matched route files.
+    """
+    activities = w.get("_activities", [])
+    if not activities:
+        return [w]
+
+    legs = []
+    for act in activities:
+        meta = act.get("metadata", {})
+        # Skip transition legs (no leg number)
+        if "WOMultiSportLegNumber" not in meta:
+            continue
+
+        stats = act.get("statistics", [])
+        inferred_type = _infer_activity_type(stats)
+
+        # Match route files by time overlap with this leg
+        leg_start = parse_date(act.get("startDate"))
+        leg_end = parse_date(act.get("endDate"))
+        matched_route = None
+        if leg_start and leg_end:
+            best_overlap = timedelta(0)
+            for route_start, route_end, route_path in routes_with_times:
+                overlap_start = max(leg_start, route_start)
+                overlap_end = min(leg_end, route_end)
+                overlap = overlap_end - overlap_start
+                if overlap > best_overlap:
+                    best_overlap = overlap
+                    matched_route = route_path
+
+        leg_w = {
+            "workoutActivityType": inferred_type,
+            "startDate": act.get("startDate"),
+            "endDate": act.get("endDate"),
+            "duration": act.get("duration"),
+            "durationUnit": act.get("durationUnit", "min"),
+            "sourceName": w.get("sourceName", ""),
+            "sourceVersion": w.get("sourceVersion", ""),
+            "device": w.get("device", ""),
+            "creationDate": w.get("creationDate", ""),
+            "metadata": {k: v for k, v in meta.items() if k != "WOMultiSportLegNumber"},
+            "events": act.get("events", []),
+            "statistics": stats,
+            "route_file": matched_route,
+        }
+        # Copy parent-level metadata that isn't overridden by leg metadata
+        for k, v in w.get("metadata", {}).items():
+            if k not in leg_w["metadata"]:
+                leg_w["metadata"][k] = v
+        legs.append(leg_w)
+
+    if not legs:
+        return [w]
+
+    leg_types = [format_workout_type(l["workoutActivityType"]) for l in legs]
+    print(f"    Split SwimBikeRun into {len(legs)} legs: {' + '.join(leg_types)}")
+    return legs
+
+
 def parse_workouts():
     """Stream export.xml and extract all Workout elements."""
     print("Pass 1: Scanning workouts from export.xml ...")
@@ -266,6 +365,8 @@ def parse_workouts():
         w["events"] = []
         w["statistics"] = []
         w["route_file"] = None
+        w["_activities"] = []
+        routes_with_times = []
 
         for child in elem:
             if child.tag == "MetadataEntry":
@@ -280,10 +381,46 @@ def parse_workouts():
             elif child.tag == "WorkoutStatistics":
                 w["statistics"].append(dict(child.attrib))
             elif child.tag == "WorkoutRoute":
+                route_path = None
                 for sub in child:
                     if sub.tag == "FileReference":
-                        w["route_file"] = sub.get("path", "")
-        workouts.append(w)
+                        route_path = sub.get("path", "")
+                if route_path:
+                    w["route_file"] = route_path
+                    route_start = parse_date(child.get("startDate"))
+                    route_end = parse_date(child.get("endDate"))
+                    if route_start and route_end:
+                        routes_with_times.append((route_start, route_end, route_path))
+            elif child.tag == "WorkoutActivity":
+                act = {
+                    "startDate": child.get("startDate"),
+                    "endDate": child.get("endDate"),
+                    "duration": child.get("duration"),
+                    "durationUnit": child.get("durationUnit", "min"),
+                    "metadata": {},
+                    "events": [],
+                    "statistics": [],
+                }
+                for sub in child:
+                    if sub.tag == "MetadataEntry":
+                        act["metadata"][sub.get("key", "")] = sub.get("value", "")
+                    elif sub.tag == "WorkoutEvent":
+                        ev = dict(sub.attrib)
+                        ev["_metadata"] = {}
+                        for subsub in sub:
+                            if subsub.tag == "MetadataEntry":
+                                ev["_metadata"][subsub.get("key", "")] = subsub.get("value", "")
+                        act["events"].append(ev)
+                    elif sub.tag == "WorkoutStatistics":
+                        act["statistics"].append(dict(sub.attrib))
+                w["_activities"].append(act)
+
+        # Split multisport workouts into separate per-leg workouts
+        if w.get("workoutActivityType") == "HKWorkoutActivityTypeSwimBikeRun":
+            split_legs = _split_multisport(w, routes_with_times)
+            workouts.extend(split_legs)
+        else:
+            workouts.append(w)
         elem.clear()
 
     print(f"  Found {len(workouts)} workouts total")

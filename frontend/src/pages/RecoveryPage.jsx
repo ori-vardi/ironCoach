@@ -61,7 +61,7 @@ function EducationPanel({ t, current, lastRec, weeklyLoad, timeline }) {
 
     const ctlA = assessValue(ctl, [[0, '#ff5370', 'Beginner'], [40, '#ffc777', 'Intermediate'], [70, '#c3e88d', 'Advanced']])
     const atlA = assessValue(atl, [[0, '#c3e88d', 'Low fatigue'], [80, '#ffc777', 'Elevated'], [100, '#ff5370', 'High — recovery needed']])
-    const tsbA = assessValue(tsb, [[-30, '#ff5370', 'Overreaching'], [-10, '#ff966c', 'Building fitness'], [0, '#ffc777', 'Balanced'], [10, '#c3e88d', 'Fresh — race ready']])
+    const tsbA = assessValue(tsb, [[-30, '#ff5370', 'Fatigued'], [-20, '#ff966c', 'Loaded'], [0, '#ffc777', 'Fresh'], [15, '#c3e88d', 'Peaked']])
     const recA = assessValue(rec, [[0, '#ff5370', 'Depleted'], [25, '#ff966c', 'Fatigued'], [50, '#ffc777', 'Moderate'], [75, '#c3e88d', 'Fresh']])
 
     raw = raw.replace(/\{ctl\}/g, coloredVal(ctl, '', ctlA))

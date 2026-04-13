@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import Plot from 'react-plotly.js'
 import { api } from '../api'
 import { COLORS, PLOTLY_LAYOUT, PLOTLY_CONFIG } from '../constants'
-import { fmtDur, fmtDist, fmtDateShort, fmtTime, safef, fmtSleepHours, getRecoveryInfoTexts } from '../utils/formatters'
+import { fmtDur, fmtDist, fmtDateShort, fmtTime, safef, fmtSleepHours, getRecoveryInfoTexts, computeRaceTsbData } from '../utils/formatters'
 import { recoveryColor, trainingPhase, statusColor, fatigueColor } from '../utils/classifiers'
 import { useApp } from '../context/AppContext'
 import KpiCard from '../components/common/KpiCard'
@@ -11,7 +11,6 @@ import InfoTip from '../components/common/InfoTip'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import WorkoutDetailModal from '../components/WorkoutDetailModal'
 import MergeActionBar from '../components/MergeActionBar'
-import RaceReadinessBar from '../components/common/RaceReadinessBar'
 import ReadinessGauge from '../components/common/ReadinessGauge'
 import useTableSort from '../utils/useTableSort'
 import { useI18n } from '../i18n/I18nContext'
@@ -58,6 +57,7 @@ export default function OverviewPage() {
   const [latestInsight, setLatestInsight] = useState(null)
   const [todayCalories, setTodayCalories] = useState(null)
   const [calorieTarget, setCalorieTarget] = useState(null)
+  const [brickNums, setBrickNums] = useState(new Set())
   const [refreshKey, setRefreshKey] = useState(0)
 
   const overviewSortCols = useMemo(() => ({
@@ -107,7 +107,7 @@ export default function OverviewPage() {
     async function load() {
       try {
         const today = new Date().toISOString().slice(0, 10)
-        const [weekly, race, recovery, events, insights, nutrition, targets] = await Promise.all([
+        const [weekly, race, recovery, events, insights, nutrition, targets, bricks] = await Promise.all([
           api('/api/stats/weekly'),
           api('/api/race'),
           api('/api/recovery').catch(() => null),
@@ -115,6 +115,7 @@ export default function OverviewPage() {
           api('/api/insights/all?limit=1').catch(() => []),
           api(`/api/nutrition?date=${today}`).catch(() => null),
           api('/api/nutrition/targets').catch(() => null),
+          api(`/api/bricks?from_date=${dateFrom}&to_date=${dateTo}`).catch(() => []),
         ])
         if (cancelled) return
         setRace(race)
@@ -138,6 +139,13 @@ export default function OverviewPage() {
         if (targets && targets.calories) {
           setCalorieTarget(targets.calories)
         }
+        if (Array.isArray(bricks)) {
+          const nums = new Set()
+          for (const b of bricks) {
+            for (const bw of b.workouts || []) nums.add(String(bw.workout_num))
+          }
+          setBrickNums(nums)
+        }
       } catch (e) {
         if (!cancelled) setError(e.message)
       } finally {
@@ -146,7 +154,7 @@ export default function OverviewPage() {
     }
     load()
     return () => { cancelled = true }
-  }, [setRace, refreshKey])
+  }, [setRace, refreshKey, dateFrom, dateTo])
 
   // Re-fetch overview data when import or merge completes
   useEffect(() => {
@@ -256,7 +264,25 @@ export default function OverviewPage() {
             ? <KpiCard key="hrv" value={`${Math.round(lastRec.hrv_ms)} ms`} label={t('hrv')} sublabel={lastRec.date} info={INFO.hrv} style={{ color: hrvColor }} fillPct={Math.min((lastRec.hrv_ms / 100) * 100, 100)} fillColor={hrvColor} />
             : null,
           <KpiCard key="fatigue" animate={Math.round(rc.fatigue)} label={t('fatigue_atl')} info={INFO.fatigue} style={{ color: fatigueColor(rc.fatigue, phase) }} fillPct={Math.min(rc.fatigue, 100)} fillColor={fatigueColor(rc.fatigue, phase)} />,
-          <KpiCard key="tsb" value={tsbVal} label={t('form_tsb')} sublabel={tsbVal > 0 ? t('rested') : t('building')} info={INFO.tsb} style={{ color: tsbVal > 0 ? '#c3e88d' : '#ff966c' }} />,
+          <KpiCard key="tsb" value={tsbVal} label={t('form_tsb')} sublabel={tsbVal > 0 ? t('rested') : t('building')} info={INFO.tsb} style={{ color: tsbVal > 0 ? '#c3e88d' : '#ff966c' }}
+            infoChildren={(() => {
+              const { tsbPct } = computeRaceTsbData(tsbVal, 999)
+              return (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 4 }}>Your position:</div>
+                  <div className="race-tsb-bar-wrapper">
+                    <div className="race-tsb-marker" style={{ left: `${tsbPct}%` }} title={`TSB: ${tsbVal}`} />
+                    <div className="race-tsb-bar">
+                      <div className="race-tsb-zone zone-building" style={{ flex: 25 }}>{t('building')}</div>
+                      <div className="race-tsb-zone zone-maintaining" style={{ flex: 25 }}>{t('maintaining')}</div>
+                      <div className="race-tsb-zone zone-tapering" style={{ flex: 25 }}>{t('tapering')}</div>
+                      <div className="race-tsb-zone zone-peaked" style={{ flex: 25 }}>{t('peaked')}</div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
+          />,
           sleepColor
             ? <KpiCard key="sleep" value={fmtSleepHours(lastRec.sleep_total)} label={t('sleep')} sublabel={lastRec.date} info={INFO.sleep} style={{ color: sleepColor }} fillPct={Math.min((sleepH / 9) * 100, 100)} fillColor={sleepColor} />
             : null,
@@ -374,13 +400,16 @@ export default function OverviewPage() {
                     </p>
                   </div>
                 )}
-                {nearestEvent && (
+                {raceEvents.length > 0 && (
                   <div className="card" style={{ marginTop: 6 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                      <h4 style={{ margin: 0, fontSize: 13 }}>{t('race_readiness')}</h4>
-                      <InfoTip text={t('tsb_explanation') + t('tsb_explanation_colors')} />
-                    </div>
-                    <RaceReadinessBar event={nearestEvent} tsb={tsbVal} compact />
+                    <h4 style={{ margin: '0 0 8px', fontSize: 13 }}>{t('events_title')}</h4>
+                    {raceEvents.filter(e => (e.days_until ?? 999) > 0).slice(0, 5).map(ev => (
+                      <div key={ev.id} style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4, direction: 'ltr', unicodeBidi: 'isolate', flexWrap: 'wrap' }}>
+                        <strong dir="auto" style={{ fontSize: 13 }}>{ev.event_name || ev.event_type}</strong>
+                        <span style={{ color: 'var(--accent)', fontSize: 13 }}>{ev.days_until}d</span>
+                        {!!ev.is_primary && <span style={{ color: 'var(--yellow)', fontSize: 10 }}>PRIMARY</span>}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -391,12 +420,8 @@ export default function OverviewPage() {
 
       {/* Race Day Readiness — shown even without workout data if events exist */}
       {!rc && nearestEvent && (
-        <div className="card mb-20">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-            <h4 style={{ margin: 0, fontSize: 13 }}>{t('race_readiness')}</h4>
-            <InfoTip text={t('tsb_explanation') + t('tsb_explanation_colors')} />
-          </div>
-          <RaceReadinessBar event={nearestEvent} tsb={0} compact />
+        <div className="card mb-20" style={{ display: 'flex', justifyContent: 'center' }}>
+          <ReadinessGauge score={0} event={nearestEvent} tsb={0} compact infoTip={t('readiness_score_tip')} />
         </div>
       )}
 
@@ -451,7 +476,7 @@ export default function OverviewPage() {
                     <td onClick={e => toggleSelect(w.workout_num, e)}>
                       <input type="checkbox" checked={selected.has(w.workout_num)} readOnly style={{ cursor: 'pointer' }} />
                     </td>
-                    <td>{w.workout_num}</td>
+                    <td>{w.workout_num}{brickNums.has(String(w.workout_num)) && <span className="brick-tag" title={t('page_bricks')}>🧱</span>}</td>
                     <td>{fmtDateShort(w.startDate)}</td>
                     <td>{fmtTime(w.startDate, w.meta_TimeZone)}</td>
                     <td><Badge type={w.discipline} text={w.type} /></td>

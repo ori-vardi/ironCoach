@@ -52,6 +52,15 @@ export default function TrainingPlanPage() {
   // Expand text overlay
   const [expandText, setExpandText] = useState(null)
 
+  useEffect(() => {
+    if (expandText == null) return
+    const handler = (e) => {
+      if (e.key === 'Escape') { e.stopPropagation(); setExpandText(null) }
+    }
+    window.addEventListener('keydown', handler, true)
+    return () => window.removeEventListener('keydown', handler, true)
+  }, [expandText])
+
   // Confirm dialog
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [confirmTarget, setConfirmTarget] = useState(null)
