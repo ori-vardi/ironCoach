@@ -32,6 +32,7 @@ export function ChatProvider({ children }) {
   }, [chatMode])
 
   const loadSessions = useCallback(async (mode) => {
+    if (!userId) return []
     const m = mode || chatMode
     try {
       const list = await api(`/api/chat/sessions?mode=${m}`)
@@ -40,7 +41,7 @@ export function ChatProvider({ children }) {
     } catch {
       return []
     }
-  }, [chatMode])
+  }, [chatMode, userId])
 
   useEffect(() => {
     if (!userId) return

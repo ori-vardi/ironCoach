@@ -44,8 +44,8 @@ export default function ImportModal({ onClose }) {
       refreshWorkouts()
       window.dispatchEvent(new Event('coach-data-update'))
       window.dispatchEvent(new CustomEvent('notification-poll-now'))
-      // Always notify Layout so pending import icon appears immediately
-      window.dispatchEvent(new Event('pending-import-changed'))
+      // Notify Layout so pending import icon appears (but don't auto-open — ImportModal handles its own PostImportModal)
+      window.dispatchEvent(new Event('pending-import-updated'))
       if (!mountedRef.current) return
       setStatus({ type: 'success', text: r.output || t('import_success') })
       setMergeCandidates(r.merge_candidates || [])
@@ -140,7 +140,9 @@ export default function ImportModal({ onClose }) {
         mergeCandidates={mergeCandidates}
         brickSessions={brickSessions}
         onClose={() => {
-          api('/api/import/pending', { method: 'DELETE' }).catch(() => {})
+          api('/api/import/pending', { method: 'DELETE' }).then(() => {
+            window.dispatchEvent(new Event('pending-import-updated'))
+          }).catch(() => {})
           refreshWorkouts()
           window.dispatchEvent(new Event('coach-data-update'))
           onClose()

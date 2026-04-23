@@ -195,20 +195,40 @@ def _detect_and_fix_gps(rows: list, workout_type: str = None) -> dict:
             rows[idx]["_gps_corrected"] = "1"
 
     # Group bad GPS points into clusters (consecutive indices within 20 rows)
+    # Position each cluster at the nearest good GPS point (on the real route)
     bad_clusters = []
+    # Build a lookup of good GPS rows (not in bad_indices) for anchoring clusters
+    good_gps_lookup = []
+    for g in gps_rows:
+        if g["idx"] not in bad_indices:
+            good_gps_lookup.append(g)
+
+    def _cluster_anchor(cluster):
+        """Find nearest good GPS point before the cluster start (fallback: after)."""
+        first_idx = cluster[0]["idx"]
+        last_idx = cluster[-1]["idx"]
+        # Search backward for nearest good point before cluster
+        for g in reversed(good_gps_lookup):
+            if g["idx"] < first_idx:
+                return g["lat"], g["lon"]
+        # Fallback: nearest good point after cluster
+        for g in good_gps_lookup:
+            if g["idx"] > last_idx:
+                return g["lat"], g["lon"]
+        # Last resort: centroid of bad points
+        return (sum(p["lat"] for p in cluster) / len(cluster),
+                sum(p["lon"] for p in cluster) / len(cluster))
+
     if bad_gps_points:
         cluster = [bad_gps_points[0]]
         for pt in bad_gps_points[1:]:
             if pt["idx"] - cluster[-1]["idx"] <= CLUSTER_MAX_GAP_ROWS:
                 cluster.append(pt)
             else:
-                # Sample: centroid of cluster
-                clat = sum(p["lat"] for p in cluster) / len(cluster)
-                clon = sum(p["lon"] for p in cluster) / len(cluster)
+                clat, clon = _cluster_anchor(cluster)
                 bad_clusters.append({"lat": round(clat, 6), "lon": round(clon, 6), "count": len(cluster)})
                 cluster = [pt]
-        clat = sum(p["lat"] for p in cluster) / len(cluster)
-        clon = sum(p["lon"] for p in cluster) / len(cluster)
+        clat, clon = _cluster_anchor(cluster)
         bad_clusters.append({"lat": round(clat, 6), "lon": round(clon, 6), "count": len(cluster)})
 
     return {

@@ -1431,11 +1431,7 @@ textarea { resize: vertical; min-height: 60px; text-align: start; }
 .chat-msg-body[dir="rtl"] th {
     unicode-bidi: plaintext;
 }
-/* RTL: list items and paragraphs in RTL chat messages */
-.chat-msg-body[dir="rtl"] li,
-.chat-msg-body[dir="rtl"] p {
-    unicode-bidi: plaintext;
-}
+/* RTL: list items and paragraphs inherit overall message direction */
 .chat-msg.error .chat-msg-body {
     background: rgba(255,117,127,0.15);
     border: 1px solid var(--red);
@@ -3044,6 +3040,67 @@ textarea { resize: vertical; min-height: 60px; text-align: start; }
     text-transform: uppercase;
     margin-top: 2px;
 }
+/* Sleep breakdown - new layout */
+.sleep-total-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+.sleep-total-value {
+    font-size: 28px;
+    font-weight: 700;
+    font-feature-settings: "tnum";
+}
+.sleep-total-label {
+    font-size: 12px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+}
+.sleep-composition-bar {
+    display: flex;
+    height: 10px;
+    border-radius: 5px;
+    overflow: hidden;
+    gap: 2px;
+    margin-bottom: 16px;
+}
+.sleep-composition-bar > div {
+    border-radius: 5px;
+}
+.sleep-stages-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.sleep-stage-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.sleep-stage-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.sleep-stage-name {
+    font-size: 13px;
+    min-width: 50px;
+}
+.sleep-stage-value {
+    font-size: 14px;
+    font-weight: 600;
+    font-feature-settings: "tnum";
+    margin-inline-start: auto;
+}
+.sleep-stage-pct {
+    font-size: 12px;
+    color: var(--text-dim);
+    font-feature-settings: "tnum";
+    min-width: 30px;
+    text-align: end;
+}
 .race-readiness-bar {
     display: flex;
     flex-direction: column;
@@ -3128,6 +3185,9 @@ textarea { resize: vertical; min-height: 60px; text-align: start; }
 [dir="rtl"] .cutoff-time,
 [dir="rtl"] .disc-since,
 [dir="rtl"] .sleep-avg-value,
+[dir="rtl"] .sleep-total-value,
+[dir="rtl"] .sleep-stage-value,
+[dir="rtl"] .sleep-stage-pct,
 [dir="rtl"] .race-days {
     direction: ltr;
     unicode-bidi: isolate;

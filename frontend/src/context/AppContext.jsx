@@ -26,7 +26,10 @@ export function AppProvider({ children }) {
       .then(setAllWorkouts)
       .catch(err => console.error('Failed to load:', err))
     api('/api/ai-status').then(r => setAiEnabled(r.ai_enabled)).catch(() => {})
-    const onUpdate = () => api('/api/ai-status').then(r => setAiEnabled(r.ai_enabled)).catch(() => {})
+    const onUpdate = () => {
+      api('/api/ai-status').then(r => setAiEnabled(r.ai_enabled)).catch(() => {})
+      api('/api/summary').then(setAllWorkouts).catch(() => {})
+    }
     window.addEventListener('coach-data-update', onUpdate)
     return () => window.removeEventListener('coach-data-update', onUpdate)
   }, [user])

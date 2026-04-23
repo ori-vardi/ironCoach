@@ -374,9 +374,15 @@ export default function RecoveryPage() {
                 </div>
                 <Plot
                   data={[
-                    { x: recDates, y: sleepDeep, type: 'bar', name: t('deep'), marker: { color: '#3d59a1' } },
-                    { x: recDates, y: sleepCore, type: 'bar', name: t('core'), marker: { color: '#65bcff' } },
-                    { x: recDates, y: sleepRem, type: 'bar', name: t('rem'), marker: { color: '#c099ff' } },
+                    { x: recDates, y: sleepDeep, type: 'bar', name: t('deep'), marker: { color: '#3d59a1' },
+                      hovertemplate: '%{x}<br>Deep: %{y:.1f}h<extra></extra>' },
+                    { x: recDates, y: sleepCore, type: 'bar', name: t('core'), marker: { color: '#65bcff' },
+                      hovertemplate: '%{x}<br>Core: %{y:.1f}h<extra></extra>' },
+                    { x: recDates, y: sleepRem, type: 'bar', name: t('rem'), marker: { color: '#c099ff' },
+                      hovertemplate: '%{x}<br>REM: %{y:.1f}h<extra></extra>' },
+                    { x: recDates, y: sleepTotal, type: 'scatter', mode: 'lines', name: t('total'),
+                      line: { color: '#c8d3f5', width: 1.5 }, connectgaps: false,
+                      hovertemplate: '%{x}<br>Total: %{y:.1f}h<extra></extra>' },
                   ]}
                   layout={{
                     ...chartLayout('', 'hours'),
@@ -390,7 +396,7 @@ export default function RecoveryPage() {
                     }],
                   }}
                   config={PLOTLY_CONFIG}
-                  useResizeHandler style={{ width: '100%', height: 250 }}
+                  useResizeHandler style={{ width: '100%', height: 280 }}
                 />
               </div>
             )}
@@ -404,30 +410,33 @@ export default function RecoveryPage() {
               const avgCore = validSleep.reduce((s, r) => s + (r.sleep_core || 0), 0) / validSleep.length
               const avgRem = validSleep.reduce((s, r) => s + (r.sleep_rem || 0), 0) / validSleep.length
               const avgAwake = validSleep.reduce((s, r) => s + (r.sleep_awake || 0), 0) / validSleep.length
+              const stages = [
+                { key: 'deep', value: avgDeep, color: '#3d59a1' },
+                { key: 'core', value: avgCore, color: '#65bcff' },
+                { key: 'rem', value: avgRem, color: '#c099ff' },
+                { key: 'awake', value: avgAwake, color: 'var(--text-dim)' },
+              ]
               return (
                 <div className="card">
-                  <h4 style={{ marginBottom: 12 }}>{t('avg_sleep')}</h4>
-                  <div className="sleep-avg-grid">
-                    <div className="sleep-avg-item">
-                      <div className="sleep-avg-value">{fmtSleepHours(avgTotal)}</div>
-                      <div className="sleep-avg-label">{t('total')}</div>
-                    </div>
-                    <div className="sleep-avg-item">
-                      <div className="sleep-avg-value" style={{ color: '#3d59a1' }}>{fmtSleepHours(avgDeep)}</div>
-                      <div className="sleep-avg-label">{t('deep')}</div>
-                    </div>
-                    <div className="sleep-avg-item">
-                      <div className="sleep-avg-value" style={{ color: '#65bcff' }}>{fmtSleepHours(avgCore)}</div>
-                      <div className="sleep-avg-label">{t('core')}</div>
-                    </div>
-                    <div className="sleep-avg-item">
-                      <div className="sleep-avg-value" style={{ color: '#c099ff' }}>{fmtSleepHours(avgRem)}</div>
-                      <div className="sleep-avg-label">{t('rem')}</div>
-                    </div>
-                    <div className="sleep-avg-item">
-                      <div className="sleep-avg-value" style={{ color: 'var(--text-dim)' }}>{fmtSleepHours(avgAwake)}</div>
-                      <div className="sleep-avg-label">{t('awake')}</div>
-                    </div>
+                  <h4 style={{ marginBottom: 16 }}>{t('avg_sleep')}</h4>
+                  <div className="sleep-total-row">
+                    <span className="sleep-total-value">{fmtSleepHours(avgTotal)}</span>
+                    <span className="sleep-total-label">{t('total')}</span>
+                  </div>
+                  <div className="sleep-composition-bar">
+                    {stages.filter(s => s.value > 0).map(s => (
+                      <div key={s.key} style={{ flex: s.value, backgroundColor: s.key === 'awake' ? '#444' : s.color }} title={`${t(s.key)}: ${fmtSleepHours(s.value)}`} />
+                    ))}
+                  </div>
+                  <div className="sleep-stages-list">
+                    {stages.map(s => (
+                      <div key={s.key} className="sleep-stage-row">
+                        <span className="sleep-stage-dot" style={{ backgroundColor: s.key === 'awake' ? '#444' : s.color }} />
+                        <span className="sleep-stage-name">{t(s.key)}</span>
+                        <span className="sleep-stage-value">{fmtSleepHours(s.value)}</span>
+                        <span className="sleep-stage-pct">{Math.round(s.value / avgTotal * 100)}%</span>
+                      </div>
+                    ))}
                   </div>
                   <p className="text-sm text-dim mt-12">
                     {t('sleep_based_on_pre')} {validSleep.length} {t('sleep_based_on_post')}

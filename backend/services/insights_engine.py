@@ -158,7 +158,9 @@ def _build_workout_prompt(w: dict, plans: list, preamble: str = "") -> str:
         prompt += (
             "\n\n## PLANNED WORKOUT (training plan for this day)\n" + "\n".join(plan_lines) +
             "\n\nIMPORTANT: Compare every metric (distance, duration, intensity, pace, HR zones) "
-            "against the plan. State clearly what was hit, missed, or exceeded."
+            "against the plan. State clearly what was hit, missed, or exceeded. "
+            "Total distance/duration includes ALL phases (warmup + main + strides + cooldown) — "
+            "do NOT flag warmup/cooldown as overshoot."
         )
 
     prompt += (
@@ -370,16 +372,38 @@ def _build_specialist_prompt(w: dict, sections: dict, plans: list, preamble: str
     if plans:
         plan_lines = []
         for p in plans:
-            plan_lines.append(
-                f"- {p.get('discipline','').upper()}: {p.get('title','')} | "
-                f"{p.get('description','')} | Duration: {p.get('duration_planned_min',0)} min, "
-                f"Distance: {p.get('distance_planned_km',0)} km, Intensity: {p.get('intensity','')}"
-            )
+            parts = [
+                f"- {p.get('discipline','').upper()}: {p.get('title','')}",
+                f"  {p.get('description','')}",
+                f"  Duration: {p.get('duration_planned_min',0)} min, Distance: {p.get('distance_planned_km',0)} km",
+                f"  Intensity: {p.get('intensity','')}, Phase: {p.get('phase','')}",
+            ]
+            plan_lines.append("\n".join(parts))
+
+        # Detect easy/recovery/deload context from any plan
+        intensities = {p.get('intensity', '').lower() for p in plans}
+        phases = {p.get('phase', '').lower() for p in plans}
+        is_easy = bool(intensities & {'easy', 'recovery'}) or bool(phases & {'deload', 'recovery'})
+
         plan_block = (
             "\n\n## PLANNED WORKOUT (training plan for this day)\n"
             + "\n".join(plan_lines)
-            + "\n\nIMPORTANT: Compare every metric (distance, duration, intensity, pace, HR zones) "
-            "against this plan. State clearly what was hit, missed, or exceeded."
+        )
+        if is_easy:
+            plan_block += (
+                "\n\n⚠️ DELOAD/RECOVERY CONTEXT: This workout is planned as easy/recovery intensity "
+                "or during a deload/recovery phase. Lower HR zones and slower paces are EXPECTED and CORRECT. "
+                "Do NOT criticize the athlete for staying in Z1-Z2 or for low effort — that IS the goal. "
+                "Evaluate whether the athlete successfully kept effort easy enough, not whether they pushed hard enough."
+            )
+        plan_block += (
+            "\n\nIMPORTANT: Compare every metric (distance, duration, intensity, pace, HR zones) "
+            "against this plan. State clearly what was hit, missed, or exceeded. "
+            "Calibrate your analysis to the planned intensity — judge execution against what was PLANNED, "
+            "not against maximum performance.\n"
+            "REMEMBER: Total distance/duration includes ALL phases (warmup + main + strides + cooldown). "
+            "If the plan prescribes warmup/strides/cooldown, that extra distance is PART of the plan — "
+            "only flag overshoot if the main set itself exceeded the target."
         )
 
     # Pre-computed intervals and profiles (from .sections.json)
@@ -538,11 +562,18 @@ def _build_synthesis_prompt(w: dict, specialist_analysis: str, plans: list, prea
             plan_lines.append(
                 f"- {p.get('discipline','').upper()}: {p.get('title','')} | "
                 f"{p.get('description','')} | Duration: {p.get('duration_planned_min',0)} min, "
-                f"Distance: {p.get('distance_planned_km',0)} km, Intensity: {p.get('intensity','')}"
+                f"Distance: {p.get('distance_planned_km',0)} km, Intensity: {p.get('intensity','')}, "
+                f"Phase: {p.get('phase','')}"
             )
-        plan_block = (
-            "\n\nPLANNED WORKOUT FOR THIS DAY:\n" + "\n".join(plan_lines) + "\n"
-        )
+        intensities = {p.get('intensity', '').lower() for p in plans}
+        phases = {p.get('phase', '').lower() for p in plans}
+        is_easy = bool(intensities & {'easy', 'recovery'}) or bool(phases & {'deload', 'recovery'})
+        plan_block = "\n\nPLANNED WORKOUT FOR THIS DAY:\n" + "\n".join(plan_lines) + "\n"
+        if is_easy:
+            plan_block += (
+                "⚠️ This is a DELOAD/RECOVERY workout — lower effort is the goal. "
+                "Frame the insight positively if the athlete kept it easy.\n"
+            )
 
     prompt = (
         preamble +
@@ -913,15 +944,11 @@ async def _generate_insights_batch(since_date: str, to_date: str = "", user_id: 
 
         async def _run_discipline_queue(coach_name: str, wnums: list):
             """Process all workouts for one discipline coach sequentially.
-            Rotates session every 5 workouts to keep context small."""
-            SESSION_ROTATE = 5
-            for i, wnum in enumerate(wnums):
+            Each workout gets its own session to prevent context contamination."""
+            for wnum in wnums:
                 if tracker._insight_batch_cancel:
                     return
-                # Rotate session: coach_name, coach_name-2, coach_name-3, ...
-                batch_num = i // SESSION_ROTATE
-                base_name = f"{coach_name}-user{user_id}"
-                session_name = base_name if batch_num == 0 else f"{base_name}-{batch_num + 1}"
+                session_name = f"{coach_name}-w{wnum}-user{user_id}"
                 ctx = workout_ctx[wnum]
                 w = ctx["w"]
                 same_day_block = ctx.get("same_day_context", "")
@@ -943,20 +970,13 @@ async def _generate_insights_batch(since_date: str, to_date: str = "", user_id: 
 
         async def _run_nutrition_queue(wnums: list):
             """Process all workouts for nutrition coach sequentially.
-            Rotates session per day — each date gets its own session."""
-            last_date = ""
-            date_idx = 0
+            Each workout gets its own session to prevent context contamination."""
             for wnum in wnums:
                 if tracker._insight_batch_cancel:
                     return
                 ctx = workout_ctx[wnum]
                 w = ctx["w"]
-                wdate = w.get("startDate", "")[:10]
-                if wdate != last_date:
-                    last_date = wdate
-                    date_idx += 1
-                base_name = f"nutrition-coach-user{user_id}"
-                session_name = base_name if date_idx <= 1 else f"{base_name}-d{date_idx}"
+                session_name = f"nutrition-coach-w{wnum}-user{user_id}"
                 preamble_block = f"[ATHLETE CONTEXT]\n{batch_preamble}\n\n" if batch_preamble else ""
                 nutri_note = ctx.get("user_note_nutrition") or ""
                 user_note_block = f"\n\n## ATHLETE NOTES\n{nutri_note}" if nutri_note else ""

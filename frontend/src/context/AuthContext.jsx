@@ -42,6 +42,13 @@ export function AuthProvider({ children }) {
     })
   }, [])
 
+  // Listen for 401 from api() calls — gracefully transition to login
+  useEffect(() => {
+    const handleExpired = () => { setUser(null); setLoading(false) }
+    window.addEventListener('auth-expired', handleExpired)
+    return () => window.removeEventListener('auth-expired', handleExpired)
+  }, [])
+
   const login = useCallback(async (username, password) => {
     const r = await fetch('/api/auth/login', {
       method: 'POST',

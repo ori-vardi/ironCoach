@@ -578,7 +578,11 @@ def scan_all_records(workouts, target_indices):
                     start = parse_date(start_str)
                     end = parse_date(end_str)
                     if start and end:
-                        date = end_str[:10]
+                        # Assign to wake date: evening segments (>=18:00) belong to next day
+                        if end.hour >= 18:
+                            date = (end.date() + timedelta(days=1)).strftime("%Y-%m-%d")
+                        else:
+                            date = end_str[:10]
                         stage = value.replace("HKCategoryValueSleepAnalysis", "")
                         duration_min = (end - start).total_seconds() / 60
                         sleep_segments[date].append((start_str, end_str, stage, duration_min))

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
-import { localDateStr, fmtDur, fmtDist, fmtDate, fmtTime, safef, autoGrow } from '../utils/formatters'
+import { localDateStr, fmtDur, fmtDist, fmtDate, fmtTime, safef, autoGrow, detectDir } from '../utils/formatters'
 import { useApp } from '../context/AppContext'
 import { useI18n } from '../i18n/I18nContext'
 import { classifyType, trainingPhase } from '../utils/classifiers'
@@ -26,7 +26,7 @@ const EMPTY_FORM = {
 export default function TrainingPlanPage() {
   const navigate = useNavigate()
   const { workouts, setWorkouts } = useApp()
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const [plan, setPlan] = useState([])
   const [race, setRace] = useState(null)
   const [allEvents, setAllEvents] = useState([])
@@ -546,17 +546,21 @@ export default function TrainingPlanPage() {
             </select>
           </div>
         </div>
-        <div className="form-group" style={{ position: 'relative', flex: '1 1 auto', display: 'flex', flexDirection: 'column' }}>
-          <label>{t('description')}</label>
-          <textarea dir="auto" value={formData.description}
+        <div className="form-group" style={{ flex: '1 1 auto', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <label style={{ margin: 0 }}>{t('description')}</label>
+            <button
+              type="button"
+              className="expand-text-btn"
+              style={{ position: 'static' }}
+              onClick={() => setExpandText(formData.description)}
+              title="Expand"
+            >&#x2922;</button>
+          </div>
+          <textarea dir={detectDir(formData.description)} value={formData.description}
             onChange={e => setFormData(f => ({ ...f, description: e.target.value }))}
-            style={{ overflow: 'auto', flex: '1 1 auto', minHeight: '200px', resize: 'vertical' }} />
-          <button
-            type="button"
-            className="expand-text-btn textarea-expand"
-            onClick={() => setExpandText(formData.description)}
-            title="Expand"
-          >&#x2922;</button>
+            style={{ overflow: 'auto', flex: '1 1 auto', minHeight: '200px', resize: 'vertical',
+              textAlign: detectDir(formData.description) === 'rtl' ? 'right' : 'left' }} />
         </div>
         <div className="form-actions">
           <button className="btn btn-accent" onClick={savePlanItem}>{editingId ? t('update') : t('add')}</button>
@@ -576,7 +580,8 @@ export default function TrainingPlanPage() {
         <div className="expand-overlay" onClick={() => setExpandText(null)}>
           <div className="expand-overlay-content" onClick={e => e.stopPropagation()}>
             <button className="btn btn-sm modal-close" onClick={() => setExpandText(null)} style={{ position: 'absolute', top: 12, insetInlineEnd: 12 }}>&times;</button>
-            <div className="expand-overlay-text" dir="auto">{expandText}</div>
+            <div className="expand-overlay-text" dir={detectDir(expandText)}
+              style={{ textAlign: detectDir(expandText) === 'rtl' ? 'right' : 'left' }}>{expandText}</div>
           </div>
         </div>
       )}

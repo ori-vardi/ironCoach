@@ -42,7 +42,6 @@ export default function PostImportModal({ workouts, datesWithNutrition = [], mer
   const [previewNum, setPreviewNum] = useState(null) // workout num to preview in detail modal
   const [confirmSkip, setConfirmSkip] = useState(false)
   const [uploadError, setUploadError] = useState(null)
-  const [includeRawData, setIncludeRawData] = useState({}) // { "wnum": true/false }
 
   // Combine original workouts with workouts created from merges (deduped by workout_num)
   // consumedNums = workout_b numbers absorbed into workout_a — removed entirely
@@ -179,15 +178,13 @@ export default function PostImportModal({ workouts, datesWithNutrition = [], mer
         const detectedLang = notesDir === 'rtl' ? 'he' : (notesDir === 'ltr' ? 'en' : null)
         const insightLang = detectedLang || localStorage.getItem('insightLang') || 'en'
 
-        // Build per-workout include_raw_data map
-        const rawDataNums = selectedNums.filter(n => includeRawData[n])
         const batchBody = {
           workout_nums: selectedNums,
           user_context: Object.keys(userContext).length ? userContext : null,
           user_files: Object.keys(userFiles).length ? userFiles : null,
           lang: insightLang,
+          include_raw_data: true,
         }
-        if (rawDataNums.length > 0) batchBody.include_raw_data_nums = rawDataNums
         await api('/api/insights/generate-batch', {
           method: 'POST',
           body: JSON.stringify(batchBody),
@@ -437,10 +434,6 @@ export default function PostImportModal({ workouts, datesWithNutrition = [], mer
                       ))}
                     </div>
                   )}
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 6, cursor: 'pointer' }}>
-                    <input type="checkbox" checked={!!includeRawData[w.workout_num]} onChange={e => setIncludeRawData(prev => ({ ...prev, [w.workout_num]: e.target.checked }))} />
-                    <span className="text-xs text-dim">{t('include_raw_data')}</span>
-                  </label>
                 </div>
               )}
             </div>

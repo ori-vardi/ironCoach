@@ -49,10 +49,11 @@ export default function WorkoutDetailModal({ workoutNum: initialWorkoutNum, open
   const [brickInfo, setBrickInfo] = useState(null)
   const [insightNote, setInsightNote] = useState('')
   const [insightFiles, setInsightFiles] = useState([]) // [{file_path, filename}]
-  const [includeRawData, setIncludeRawData] = useState(false)
   const insightFileRef = useRef(null)
   const { allWorkouts, refreshWorkouts, aiEnabled } = useApp()
   const { setChatOpen, setPendingInput, newSession } = useChat()
+  const allWorkoutsRef = useRef(allWorkouts)
+  allWorkoutsRef.current = allWorkouts
 
   // Sync with prop when modal opens with a new workout
   useEffect(() => {
@@ -88,8 +89,10 @@ export default function WorkoutDetailModal({ workoutNum: initialWorkoutNum, open
     setInsightLoading(true)
     setBrickInfo(null)
 
+    // Use ref to read latest allWorkouts without depending on it
+    const curWorkouts = allWorkoutsRef.current
     // Check if this is a merged workout — pass all constituent nums
-    const wo = allWorkouts?.find(w => String(w.workout_num) === String(workoutNum))
+    const wo = curWorkouts?.find(w => String(w.workout_num) === String(workoutNum))
     const mergedNums = wo?.merged_nums
     const mergeParam = mergedNums ? `?merge_with=${mergedNums.join(',')}` : ''
 
@@ -124,20 +127,17 @@ export default function WorkoutDetailModal({ workoutNum: initialWorkoutNum, open
         setInsightLoading(false)
       })
       .catch(() => setInsightLoading(false))
-  }, [workoutNum, open, allWorkouts])
+  }, [workoutNum, open])
 
   function generateInsight() {
     // Language priority: 1) detected from user note, 2) insightLang setting, 3) 'en'
     const noteLang = insightNote.trim() ? (hasHebrew(insightNote) ? 'he' : 'en') : null
     const body = {
       lang: noteLang || localStorage.getItem('insightLang') || 'en',
+      include_raw_data: true,
     }
     if (insightNote.trim()) body.user_note = insightNote.trim()
     if (insightFiles.length > 0) body.user_files = insightFiles.map(f => f.file_path)
-    if (includeRawData) body.include_raw_data = true
-    setInsightNote('')
-    setInsightFiles([])
-    setIncludeRawData(false)
 
     // Show generating state in modal; runs in background if user closes
     setGenerating(true)
@@ -150,7 +150,12 @@ export default function WorkoutDetailModal({ workoutNum: initialWorkoutNum, open
       method: 'POST',
       body: JSON.stringify(body),
     }).then(result => {
-      if (result?.insight) setInsight(result)
+      if (result?.insight) {
+        setInsight(result)
+        // Only clear context on success
+        setInsightNote('')
+        setInsightFiles([])
+      }
     }).catch(e => {
       genErr = e.message
       console.error('Insight generation failed:', e)
@@ -280,8 +285,6 @@ export default function WorkoutDetailModal({ workoutNum: initialWorkoutNum, open
               insightFileRef={insightFileRef}
               uploadInsightFile={uploadInsightFile}
               aiEnabled={aiEnabled}
-              includeRawData={includeRawData}
-              setIncludeRawData={setIncludeRawData}
             />
           )}
           {activeTab === 'splits' && hasSections && <SplitsTab sections={sections} />}
@@ -294,8 +297,10 @@ export default function WorkoutDetailModal({ workoutNum: initialWorkoutNum, open
 }
 
 /* ── Insight context input (note + photo) ── */
-function InsightContextInput({ t, insightNote, setInsightNote, insightFiles, setInsightFiles, insightFileRef, uploadInsightFile, generating, onGenerate, onStop, aiEnabled, includeRawData, setIncludeRawData }) {
+function InsightContextInput({ t, insightNote, setInsightNote, insightFiles, setInsightFiles, insightFileRef, uploadInsightFile, generating, onGenerate, onStop, aiEnabled }) {
+  const [contextOpen, setContextOpen] = useState(false)
   const [expanded, setExpanded] = useState(false)
+  const hasContext = !!(insightNote.trim() || insightFiles.length > 0)
 
   function handlePaste(e) {
     const items = e.clipboardData?.items
@@ -310,6 +315,25 @@ function InsightContextInput({ t, insightNote, setInsightNote, insightFiles, set
     }
   }
 
+  // Collapsed: Generate button + "add context" toggle
+  if (!contextOpen) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {generating ? (
+          <button className="btn btn-sm btn-red" onClick={onStop}>{t('stop')}</button>
+        ) : (
+          <button className="btn btn-sm btn-accent" onClick={onGenerate} disabled={!aiEnabled}>{aiEnabled ? t('generate') : t('ai_disabled_btn')}</button>
+        )}
+        <button className="btn btn-sm btn-outline" onClick={() => setContextOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          {t('add_context')}
+          {hasContext && <span style={{ color: 'var(--green)' }}> *</span>}
+        </button>
+      </div>
+    )
+  }
+
+  // Expanded: textarea + file attachments + buttons
   return (
     <div style={{ position: 'relative' }}>
       {expanded && <div className="expand-backdrop" onClick={() => setExpanded(false)} />}
@@ -321,7 +345,7 @@ function InsightContextInput({ t, insightNote, setInsightNote, insightFiles, set
           onChange={e => setInsightNote(e.target.value)}
           onInput={autoGrow}
           onPaste={handlePaste}
-          onKeyDown={e => { if (e.key === 'Escape' && expanded) setExpanded(false) }}
+          onKeyDown={e => { if (e.key === 'Escape') { if (expanded) setExpanded(false); else setContextOpen(false) } }}
           dir="auto"
           rows={expanded ? 10 : 4}
           style={{ overflow: 'hidden', resize: 'none', width: '100%' }}
@@ -356,13 +380,8 @@ function InsightContextInput({ t, insightNote, setInsightNote, insightFiles, set
               ))}
             </div>
           )}
-          {setIncludeRawData && (
-            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-              <input type="checkbox" checked={includeRawData} onChange={e => setIncludeRawData(e.target.checked)} />
-              <span className="text-dim">{t('include_raw_data')}</span>
-            </label>
-          )}
-          <div style={{ marginInlineStart: 'auto' }}>
+          <div style={{ marginInlineStart: 'auto', display: 'flex', gap: 6 }}>
+            <button className="btn btn-sm btn-outline" onClick={() => { setExpanded(false); setContextOpen(false) }}>&times;</button>
             {generating ? (
               <button className="btn btn-sm btn-red" onClick={onStop}>{t('stop')}</button>
             ) : (
@@ -376,7 +395,7 @@ function InsightContextInput({ t, insightNote, setInsightNote, insightFiles, set
 }
 
 /* ── Overview Tab ── */
-function OverviewTab({ meta, info, pts, sections, workoutNum, workouts, insight, insightLoading, generating, onGenerate, onStop, onDiscuss, brickInfo, onWorkoutNav, gpsCorrections, externalWeather, vo2max, trimp, hrtss, onMerge, insightNote, setInsightNote, insightFiles, setInsightFiles, insightFileRef, uploadInsightFile, aiEnabled, includeRawData, setIncludeRawData }) {
+function OverviewTab({ meta, info, pts, sections, workoutNum, workouts, insight, insightLoading, generating, onGenerate, onStop, onDiscuss, brickInfo, onWorkoutNav, gpsCorrections, externalWeather, vo2max, trimp, hrtss, onMerge, insightNote, setInsightNote, insightFiles, setInsightFiles, insightFileRef, uploadInsightFile, aiEnabled }) {
   const { t } = useI18n()
   const wSummary = workouts.find((w) => String(w.workout_num) === String(workoutNum))
 
@@ -600,7 +619,7 @@ function OverviewTab({ meta, info, pts, sections, workoutNum, workouts, insight,
           </div>
         ) : (
           <div className="insight-card-body">
-            <InsightContextInput t={t} insightNote={insightNote} setInsightNote={setInsightNote} insightFiles={insightFiles} setInsightFiles={setInsightFiles} insightFileRef={insightFileRef} uploadInsightFile={uploadInsightFile} generating={generating} onGenerate={onGenerate} onStop={onStop} aiEnabled={aiEnabled} includeRawData={includeRawData} setIncludeRawData={setIncludeRawData} />
+            <InsightContextInput t={t} insightNote={insightNote} setInsightNote={setInsightNote} insightFiles={insightFiles} setInsightFiles={setInsightFiles} insightFileRef={insightFileRef} uploadInsightFile={uploadInsightFile} generating={generating} onGenerate={onGenerate} onStop={onStop} aiEnabled={aiEnabled} />
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
               <span className="text-dim text-xs">{t('detail_no_insight')}</span>
             </div>

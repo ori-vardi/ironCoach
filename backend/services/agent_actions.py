@@ -323,6 +323,41 @@ async def _handle_analyze_nutrition(params: dict, user_id: int) -> dict:
             "message": "Meal analysis complete"}
 
 
+# ── Training Plan Handlers ────────────────────────────────────────────────────
+
+async def _handle_create_plan(params: dict, user_id: int) -> dict:
+    conn = await db.get_db()
+    try:
+        new_id = await db.plan_create(conn, params, user_id=user_id)
+        return {"ok": True, "id": new_id, "message": f"Plan created (ID: {new_id})"}
+    finally:
+        await conn.close()
+
+
+async def _handle_update_plan(params: dict, user_id: int) -> dict:
+    plan_id = params.pop("id", None) or params.pop("plan_id", None)
+    if not plan_id:
+        return {"ok": False, "error": "plan id is required"}
+    conn = await db.get_db()
+    try:
+        await db.plan_update(conn, int(plan_id), params, user_id=user_id)
+        return {"ok": True, "message": f"Plan {plan_id} updated"}
+    finally:
+        await conn.close()
+
+
+async def _handle_delete_plan(params: dict, user_id: int) -> dict:
+    plan_id = params.get("id") or params.get("plan_id")
+    if not plan_id:
+        return {"ok": False, "error": "plan id is required"}
+    conn = await db.get_db()
+    try:
+        await db.plan_delete(conn, int(plan_id), user_id=user_id)
+        return {"ok": True, "message": f"Plan {plan_id} deleted"}
+    finally:
+        await conn.close()
+
+
 # ── Action Registry ─────────────────────────────────────────────────────────
 
 ACTION_HANDLERS = {
@@ -337,6 +372,9 @@ ACTION_HANDLERS = {
     "update_memory": _handle_update_memory,
     "delete_memory": _handle_delete_memory,
     "analyze_nutrition": _handle_analyze_nutrition,
+    "create_plan": _handle_create_plan,
+    "update_plan": _handle_update_plan,
+    "delete_plan": _handle_delete_plan,
 }
 
 # Actions whose results need to be sent back to the agent as a follow-up message
