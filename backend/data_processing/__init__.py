@@ -37,6 +37,8 @@ from .workout_analysis import (
     _save_gps_segments,
     _load_gps_segments,
     _generate_all_sections,
+    _compute_peak_efforts,
+    _search_similar_intervals,
 )
 from .recovery import (
     _compute_trimp,
@@ -113,6 +115,8 @@ __all__ = [
     "_save_gps_segments",
     "_load_gps_segments",
     "_generate_all_sections",
+    "_compute_peak_efforts",
+    "_search_similar_intervals",
     # recovery
     "_compute_trimp",
     "_compute_hrtss",

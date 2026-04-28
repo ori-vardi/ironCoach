@@ -1452,3 +1452,183 @@ def _compute_sections(workout_num: int, data_dir: Path = None, merged_nums: list
     if swim_individual_laps:
         result["swim_laps"] = swim_individual_laps
     return result
+
+
+def _compute_peak_efforts(rows: list, disc: str) -> dict | None:
+    """Compute peak sustained efforts at key durations from time-series data.
+
+    Uses a rolling-window approach over the time-series to find the best
+    average power, HR, and pace at standard durations (5s, 1m, 5m, 20m, 60m).
+    Returns dict with {durations: [{label, seconds, power, hr, pace_str}]}.
+    """
+    if not rows or disc not in ("run", "bike"):
+        return None
+
+    if disc == "run":
+        speed_col = "RunningSpeed"
+        power_col = "RunningPower"
+    else:
+        speed_col = "speed_mps"
+        power_col = "CyclingPower"
+
+    timestamps = []
+    powers = []
+    hrs = []
+    speeds = []
+
+    for r in rows:
+        ts = r.get("timestamp", "")
+        if ts.startswith("##"):
+            continue
+        p = _safe_float(r.get(power_col))
+        h = _safe_float(r.get("HeartRate"))
+        s = _safe_float(r.get(speed_col))
+        if disc == "bike" and s > 0:
+            s = s * 3.6
+        elif disc == "run" and s > 0:
+            pass  # already km/h
+        powers.append(p)
+        hrs.append(h)
+        speeds.append(s)
+        timestamps.append(ts)
+
+    n = len(powers)
+    if n < 5:
+        return None
+
+    # Estimate sample interval from data
+    sample_interval = 3  # default ~3s
+    target_durations = [
+        ("5s", 5), ("1min", 60), ("5min", 300), ("20min", 1200), ("60min", 3600)
+    ]
+
+    results = []
+    for label, dur_s in target_durations:
+        window = max(1, dur_s // sample_interval)
+        if window > n:
+            continue
+
+        best_power = 0.0
+        best_hr = 0.0
+        best_speed = 0.0
+
+        # Rolling window for power
+        power_vals = [p for p in powers if p > 0]
+        if len(power_vals) >= window:
+            running_sum = sum(powers[:window])
+            best_power = running_sum / window
+            for i in range(1, n - window + 1):
+                running_sum += powers[i + window - 1] - powers[i - 1]
+                avg = running_sum / window
+                if avg > best_power:
+                    best_power = avg
+
+        # Rolling window for HR
+        hr_vals = [h for h in hrs if h > 0]
+        if len(hr_vals) >= window:
+            running_sum = sum(hrs[:window])
+            best_hr = running_sum / window
+            for i in range(1, n - window + 1):
+                running_sum += hrs[i + window - 1] - hrs[i - 1]
+                avg = running_sum / window
+                if avg > best_hr:
+                    best_hr = avg
+
+        # Rolling window for speed (best = fastest)
+        speed_vals = [s for s in speeds if s > 0]
+        if len(speed_vals) >= window:
+            running_sum = sum(speeds[:window])
+            best_speed = running_sum / window
+            for i in range(1, n - window + 1):
+                running_sum += speeds[i + window - 1] - speeds[i - 1]
+                avg = running_sum / window
+                if avg > best_speed:
+                    best_speed = avg
+
+        entry = {"label": label, "seconds": dur_s}
+        if best_power > 0:
+            entry["power"] = round(best_power)
+        if best_hr > 0:
+            entry["hr"] = round(best_hr)
+        if best_speed > 0:
+            if disc == "run" and best_speed > 0:
+                secs_per_km = 3600 / best_speed
+                m = int(secs_per_km // 60)
+                s = int(secs_per_km % 60)
+                entry["pace_str"] = f"{m}:{s:02d}/km"
+            else:
+                entry["speed_kmh"] = round(best_speed, 1)
+        if len(entry) > 2:
+            results.append(entry)
+
+    if not results:
+        return None
+
+    peak = {"durations": results}
+
+    # Estimate FTP from 20-min peak power (bike only)
+    for r in results:
+        if r["seconds"] == 1200 and r.get("power") and disc == "bike":
+            peak["estimated_ftp"] = round(r["power"] * 0.95)
+            break
+
+    return peak
+
+
+def _search_similar_intervals(data_dir: Path, disc: str, *,
+                              min_dur_s: int = 0, max_dur_s: int = 9999,
+                              interval_type: str = None,
+                              days_back: int = 30) -> list:
+    """Search precomputed .sections.json files for matching intervals.
+
+    Scans recent workouts and returns intervals matching the filter criteria.
+    Useful for finding all VO2max intervals, tempo segments, etc. across history.
+    """
+    from datetime import datetime, timedelta
+    cutoff = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+
+    workouts_dir = data_dir / "workouts"
+    if not workouts_dir.exists():
+        return []
+
+    results = []
+    for sections_file in sorted(workouts_dir.glob("**/workout_*.sections.json"), reverse=True):
+        # Extract date from filename pattern: workout_NNN_YYYY-MM-DD_Type
+        fname = sections_file.stem.replace(".sections", "")
+        parts = fname.split("_")
+        if len(parts) < 3:
+            continue
+        wnum = parts[1]
+        wdate = parts[2] if len(parts) >= 3 else ""
+        if wdate < cutoff:
+            break  # sorted descending, so stop early
+
+        try:
+            with open(sections_file) as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            continue
+
+        if data.get("discipline") != disc:
+            continue
+
+        intervals = data.get("intervals", [])
+        for iv in intervals:
+            dur = iv.get("duration_sec", 0)
+            if dur < min_dur_s or dur > max_dur_s:
+                continue
+            if interval_type and iv.get("type") != interval_type:
+                continue
+            results.append({
+                "workout_num": int(wnum) if wnum.isdigit() else wnum,
+                "date": wdate,
+                "type": iv.get("type", ""),
+                "duration_sec": dur,
+                "pace_str": iv.get("pace_str"),
+                "avg_speed_kmh": iv.get("avg_speed_kmh"),
+                "avg_hr": iv.get("avg_hr"),
+                "avg_power": iv.get("avg_power"),
+                "distance_m": iv.get("distance_m"),
+            })
+
+    return results
