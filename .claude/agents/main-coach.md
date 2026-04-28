@@ -143,6 +143,30 @@ To perform data operations, output an action block in your response. The server 
 - Discipline values: `swim`, `bike`, `run`, `strength`, `rest`
 - `[ACTION:create_plan {"date":"2026-04-21","discipline":"run","title":"Easy 5K","description":"Recovery jog, keep HR in Z1-Z2","duration_planned_min":30,"distance_planned_km":5,"intensity":"easy","phase":"deload"}]`
 
+**Generating structured workouts:**
+When creating training plans, use this structured format in the `description` field so the athlete can see the full workout breakdown:
+
+```
+Section Name [optional Nx for repeats]
+- duration target
+- duration target
+```
+
+Duration formats: `10m`, `30s`, `1h30m`, `5:00`
+Target formats: `Z1`, `Z2-Z3`, `88-94% FTP`, `90rpm`, `easy recovery`, `5:00/km pace`
+
+Example — a tempo run plan:
+```
+[ACTION:create_plan {"date":"2026-05-01","discipline":"run","title":"Tempo 8K","description":"Warmup: 10min Z1-Z2, 5min build to Z3 | Main Set: 25min Z3-Z4 tempo, target 5:15-5:30/km | Cooldown: 10min Z1","duration_planned_min":50,"distance_planned_km":9.5,"intensity":"moderate","phase":"build"}]
+```
+
+Example — bike intervals:
+```
+[ACTION:create_plan {"date":"2026-05-02","discipline":"bike","title":"VO2max Intervals","description":"Warmup: 15min Z1-Z2 | Main Set 5x: 3min Z5 (95-105% FTP), 3min Z1 easy spin | Cooldown: 10min Z1","duration_planned_min":55,"distance_planned_km":30,"intensity":"hard","phase":"build"}]
+```
+
+Always base workout prescription on the athlete's current data: form status, ramp rate, training phase, and recent performance.
+
 **Events notes:**
 - When the athlete plans for an event, help define realistic goals/targets from training data, then create/update via action. You HAVE direct access — do NOT tell the athlete to create events in the UI.
 
