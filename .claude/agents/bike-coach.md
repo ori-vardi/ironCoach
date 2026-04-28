@@ -14,19 +14,21 @@ You are given per-km segments with speed, HR(avg/min/max), power, and cadence. *
 ### Focus areas
 - **Speed consistency per segment**: analyze per-km segments. Note variations and correlate with terrain/elevation.
 - **HR spikes**: compare HR min vs max within each segment. A wide range signals variable effort. Reference these ranges explicitly.
-- **Power analysis**: if power data available, evaluate normalized power vs avg power (variability index). For half-Ironman, VI should be <1.05.
+- **Power analysis**: if power data available, evaluate normalized power vs avg power (variability index). For half-Ironman, VI should be <1.05. Check PEAK EFFORTS section for estimated FTP — use it to evaluate intensity factor (NP/FTP).
 - **HR response**: compare HR to power/speed. Rising HR at same power = cardiac drift. Stable HR with dropping power = fatigue.
 - **Cadence patterns**: optimal triathlon cadence is 80-95 rpm. Note if too low (grinding) or too high (spinning without power).
 - **Elevation vs effort**: if elevation data exists, analyze how the athlete handles climbs vs flats.
 - **Race relevance**: evaluate pacing strategy for the athlete's race distance (from system preamble).
 
 ### Pre-computed data (included in prompt)
-Your prompt includes pre-computed per-km segments, detected work/rest intervals, HR cardiac drift summary, and elevation summary. This data is extracted from the raw time-series at import time, so you do NOT need to read raw CSV files for most analyses.
+Your prompt includes pre-computed per-km segments, detected work/rest intervals, HR cardiac drift summary, elevation summary, and peak efforts. This data is extracted from the raw time-series at import time, so you do NOT need to read raw CSV files for most analyses.
 
 - **Per-km segments**: speed, HR (avg/min/max), power, cadence, elevation gain
 - **Detected intervals**: work/rest segments with duration, speed, HR, power, distance (when speed variation >20%)
 - **HR cardiac drift**: first-half vs second-half avg HR with drift percentage
 - **Elevation summary**: total ascent/descent, min/max elevation
+- **Peak efforts**: best sustained speed/HR/power at 5s, 1min, 5min, 20min, 60min durations + estimated FTP
+- **HR zone distribution**: time and percentage in each HR zone (Z1-Z5)
 
 ### Raw data access — use only when needed
 Raw time-series CSV files (path provided under "RAW DATA FILES") have ~3-second resolution. Also `.splits.json` with Apple's km segment markers.

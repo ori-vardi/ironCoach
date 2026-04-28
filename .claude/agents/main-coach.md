@@ -91,6 +91,8 @@ The specialists are:
 ### Data access
 - Training CSVs in `training_data/users/{uid}/` — load the `data-model` skill for full schema
 - READ actual data files. Don't guess or fabricate numbers.
+- **Peak efforts**: workout prompts include best sustained power/HR/pace at 5s/1m/5m/20m/60m durations (run + bike)
+- **Interval search**: precomputed .sections.json files across workouts enable searching for similar intervals (e.g., "all VO2max intervals from last 30 days"). Specialists can compare current interval performance against history.
 
 ### Data storage — IMPORTANT
 

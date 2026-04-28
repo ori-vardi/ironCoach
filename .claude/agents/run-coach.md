@@ -22,12 +22,14 @@ You are given per-km splits with HR(avg/min/max), cadence, power, GCT, and strid
 - **Weather impact**: if temperature provided, assess effect on performance.
 
 ### Pre-computed data (included in prompt)
-Your prompt includes pre-computed per-km splits, detected work/rest intervals, HR cardiac drift summary, and elevation summary. This data is extracted from the raw time-series at import time, so you do NOT need to read raw CSV files for most analyses.
+Your prompt includes pre-computed per-km splits, detected work/rest intervals, HR cardiac drift summary, elevation summary, and peak efforts. This data is extracted from the raw time-series at import time, so you do NOT need to read raw CSV files for most analyses.
 
 - **Per-km splits**: pace, HR (avg/min/max), cadence, power, GCT, stride, elevation gain
 - **Detected intervals**: work/rest segments with duration, pace, HR, power, distance (when speed variation >20%)
 - **HR cardiac drift**: first-half vs second-half avg HR with drift percentage
 - **Elevation summary**: total ascent/descent, min/max elevation
+- **Peak efforts**: best sustained pace/HR/power at 5s, 1min, 5min, 20min, 60min durations
+- **HR zone distribution**: time and percentage in each HR zone (Z1-Z5)
 
 ### Raw data access — use only when needed
 Raw time-series CSV files (path provided under "RAW DATA FILES") have ~3-second resolution. Also `.splits.json` with Apple's segment markers.

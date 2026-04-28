@@ -18,6 +18,13 @@
   - Aggressive: 0.77-0.80
 - IF >0.80 for a long-course bike leg risks blowing up on the run
 
+### Peak Efforts & FTP Estimation
+- PEAK EFFORTS section in workout data shows best sustained power at 5s/1m/5m/20m/60m
+- **Estimated FTP** = 95% of best 20-min power (auto-computed, shown when available)
+- Use peak 5s power to assess sprint/neuromuscular capacity
+- Use peak 5min power to assess VO2max capacity
+- Compare peak efforts across workouts to track power curve progression
+
 ## Cadence Optimization
 
 - **Optimal triathlon cadence**: 80-95 rpm
