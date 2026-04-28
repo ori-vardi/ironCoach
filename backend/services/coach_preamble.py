@@ -1,16 +1,53 @@
 """Build coach preamble with athlete profile and context."""
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 import database as db
 from config import INSIGHT_COACH_PREAMBLE_TEMPLATE, TRAINING_DATA, logger
 from data_processing import (
     _load_summary, _filter_hidden, _compute_recovery_timeline,
-    _recovery_label, _load_recovery_data, _safe_float,
+    _recovery_label, _form_status, _compute_ramp_rate,
+    _compute_weekly_load_change, _training_phase,
+    _load_recovery_data, _safe_float,
     resolve_hr_settings,
 )
 
 _HE_DAYS = ["שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת", "ראשון"]
+_EN_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+
+def _relative_day_label(date_str: str, lang: str = "en") -> str:
+    """Convert 'YYYY-MM-DD' to a relative label like 'today', 'yesterday', '3 days ago (Monday)'."""
+    try:
+        d = datetime.strptime(date_str[:10], "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return ""
+    today = datetime.now().date()
+    delta = (today - d).days
+    if lang == "he":
+        day_name = f"יום {_HE_DAYS[d.weekday()]}"
+        if delta == 0:
+            return "היום"
+        elif delta == 1:
+            return "אתמול"
+        elif delta == -1:
+            return "מחר"
+        elif delta < 0:
+            return f"בעוד {-delta} ימים ({day_name})"
+        else:
+            return f"לפני {delta} ימים ({day_name})"
+    else:
+        day_name = _EN_DAYS[d.weekday()]
+        if delta == 0:
+            return "today"
+        elif delta == 1:
+            return "yesterday"
+        elif delta == -1:
+            return "tomorrow"
+        elif delta < 0:
+            return f"in {-delta} days ({day_name})"
+        else:
+            return f"{delta} days ago ({day_name})"
 
 
 def _get_current_recovery(user_data_dir, user_id: int = 1,
@@ -25,13 +62,27 @@ def _get_current_recovery(user_data_dir, user_id: int = 1,
         return None
     last = result["timeline"][-1]
     label, _ = _recovery_label(last["recovery"])
+    tsb = last["fitness"] - last["fatigue"]
+    form, form_guidance = _form_status(tsb)
     stats = {
         "recovery": round(last["recovery"]),
         "fitness": round(last["fitness"]),
         "fatigue": round(last["fatigue"]),
-        "tsb": round(last.get("form", last["recovery"] - 50)),
+        "tsb": round(tsb),
         "label": label,
+        "form_status": form,
+        "form_guidance": form_guidance,
     }
+
+    # Ramp rate (CTL change per day over last 7 days)
+    ramp = _compute_ramp_rate(result["timeline"])
+    if ramp:
+        stats["ramp_rate"] = ramp
+
+    # Weekly load change
+    weekly = _compute_weekly_load_change(result["timeline"])
+    if weekly:
+        stats["weekly_load"] = weekly
 
     # Latest recovery data (sleep, RHR, HRV) — tag with date so LLM knows freshness
     recovery_raw = _load_recovery_data(user_data_dir)
@@ -52,13 +103,26 @@ def _get_current_recovery(user_data_dir, user_id: int = 1,
 
 
 def _format_now(lang: str = "en") -> str:
-    """Format current date/time with day name in the given language."""
+    """Format current date/time with day name and date reference anchors."""
     now = datetime.now()
+    yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    tomorrow = (now + timedelta(days=1)).strftime("%Y-%m-%d")
     if lang == "he":
         day_name = f"יום {_HE_DAYS[now.weekday()]}"
+        y_day = f"יום {_HE_DAYS[(now - timedelta(days=1)).weekday()]}"
+        t_day = f"יום {_HE_DAYS[(now + timedelta(days=1)).weekday()]}"
+        return (
+            f"{now.strftime('%Y-%m-%d %H:%M')} ({day_name})\n"
+            f"  אתמול = {yesterday} ({y_day}), מחר = {tomorrow} ({t_day})"
+        )
     else:
-        day_name = now.strftime("%A")  # e.g. "Thursday"
-    return f"{now.strftime('%Y-%m-%d %H:%M')} ({day_name})"
+        day_name = now.strftime("%A")
+        y_day = (now - timedelta(days=1)).strftime("%A")
+        t_day = (now + timedelta(days=1)).strftime("%A")
+        return (
+            f"{now.strftime('%Y-%m-%d %H:%M')} ({day_name})\n"
+            f"  Yesterday = {yesterday} ({y_day}), Tomorrow = {tomorrow} ({t_day})"
+        )
 
 
 async def _build_coach_preamble(user_id: int = 1, agent_name: str = None, lang: str = "en") -> str:
@@ -105,6 +169,9 @@ async def _build_coach_preamble(user_id: int = 1, agent_name: str = None, lang: 
             try:
                 days = max(0, (datetime.strptime(date, "%Y-%m-%d") - datetime.now()).days)
                 date_str = f"{date} ({days} days away)"
+                if ev.get("is_primary"):
+                    phase = _training_phase(days)
+                    date_str += f" | Phase: **{phase}**"
             except ValueError:
                 date_str = date
             parts.append(f"- Event: **{name}** ({etype}) — {date_str}{primary}")
@@ -183,7 +250,14 @@ async def _build_coach_preamble(user_id: int = 1, agent_name: str = None, lang: 
             parts.append(f"- Recovery: **{recovery_stats['recovery']}%** ({recovery_stats['label']})")
             parts.append(f"- Fitness (CTL): **{recovery_stats['fitness']}**")
             parts.append(f"- Fatigue (ATL): **{recovery_stats['fatigue']}**")
-            parts.append(f"- Form (TSB): **{recovery_stats['tsb']}**")
+            parts.append(f"- Form (TSB): **{recovery_stats['tsb']}** → **{recovery_stats.get('form_status', 'unknown')}** ({recovery_stats.get('form_guidance', '')})")
+            ramp = recovery_stats.get("ramp_rate")
+            if ramp:
+                parts.append(f"- Ramp Rate: **{ramp['rate']} CTL/day** [{ramp['risk']}] — {ramp['label']}")
+            weekly = recovery_stats.get("weekly_load")
+            if weekly:
+                arrow = "↑" if weekly["direction"] == "up" else "↓" if weekly["direction"] == "down" else "→"
+                parts.append(f"- Weekly Load: **{weekly['current_week']}** TRIMP (prev: {weekly['previous_week']}) {arrow} {weekly['change_pct']}%")
             if recovery_stats.get('resting_hr'):
                 parts.append(f"- Resting HR: **{recovery_stats['resting_hr']} bpm** (from {data_date})")
             if recovery_stats.get('hrv_ms'):

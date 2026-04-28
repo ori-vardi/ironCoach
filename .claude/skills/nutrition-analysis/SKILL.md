@@ -84,3 +84,12 @@ Race distances are injected in the system preamble. Adjust portions based on act
 - **Flag**: >300 kcal deficit on consecutive days
 - Chronic under-fueling leads to: poor recovery, illness, injury, hormonal disruption (RED-S)
 - Better to slightly over-fuel than consistently under-fuel during build phase
+
+## Workout-Nutrition Timeline Analysis
+
+When both workout and nutrition data exist for the same day, evaluate the complete timeline:
+- **Pre-workout window (2-3h before)**: adequate carbs (1-2g/kg)? Low fiber/fat?
+- **During workout (if >60 min)**: any fueling logged? Type and quantity appropriate?
+- **Recovery window (0-60 min after)**: protein + carbs present? Timing appropriate?
+- **Performance correlation**: flat/fading effort + poor pre-workout fuel = likely cause
+- Present as a timeline: meal → workout → recovery meal, with gaps flagged

@@ -44,13 +44,15 @@ Formula: `(avg_HR_second_half - avg_HR_first_half) / avg_HR_first_half * 100`
 
 ## HR Zone Targets by Workout Type
 
-| Workout Type | Primary Zones | Notes |
-|---|---|---|
-| Easy / Recovery | Z1-Z2 | >80% of time in Z1-Z2, flag if Z3+ |
-| Long Run | Z1-Z2 | Some Z3 acceptable in final km |
-| Tempo | Z3-Z4 | Main set in Z3-Z4, warm-up/cool-down Z1-Z2 |
-| Intervals | Mixed | Work bouts Z4-Z5, recovery Z1-Z2 |
-| Race Pace | Z3 | Sustained Z3 for half-marathon effort |
+| Workout Type | Primary Zones | Flag if | Notes |
+|---|---|---|---|
+| Easy / Recovery | Z1-Z2 | >20% in Z3+ | Lower HR = successful execution |
+| Long Run | Z1-Z2 | >15% in Z4+ | Some Z3 acceptable in final km |
+| Tempo | Z3-Z4 | >30% in Z1 (excluding warmup) | Main set in Z3-Z4, warm-up/cool-down Z1-Z2 |
+| Intervals | Mixed | All time in one zone | Work bouts Z4-Z5, recovery Z1-Z2 — expect bimodal distribution |
+| Race Pace | Z3 | >20% in Z4+ | Sustained Z3 for half-marathon effort |
+
+Always report zone distribution as percentage of total time. Compare against workout intent to assess execution quality.
 
 ## Heat & Humidity Adjustments
 

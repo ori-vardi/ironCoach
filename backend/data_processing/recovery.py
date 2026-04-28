@@ -270,6 +270,41 @@ def _recovery_label(score: float):
     return "depleted", "#ff757f"
 
 
+def _form_status(tsb: float) -> tuple[str, str]:
+    """Return coaching-actionable form status and training guidance from TSB."""
+    if tsb > 20:
+        return "race ready", "Peak freshness — ideal for racing or testing"
+    if tsb > 5:
+        return "recovered", "Hard training OK — fitness gains possible"
+    if tsb > -10:
+        return "optimal training", "Productive training zone — absorbing load well"
+    if tsb > -30:
+        return "fatigued", "Recovery needed — reduce intensity or take a rest day"
+    return "very fatigued", "Prioritize rest — injury/illness risk elevated"
+
+
+def _compute_ramp_rate(timeline: list) -> dict | None:
+    """Compute CTL ramp rate (fitness change per day over last 7 days).
+
+    Returns {rate, risk, label} or None if insufficient data.
+    Risk levels based on intervals.icu methodology.
+    """
+    if len(timeline) < 8:
+        return None
+    today_ctl = timeline[-1].get("fitness", 0)
+    week_ago_ctl = timeline[-8].get("fitness", 0) if len(timeline) >= 8 else timeline[0].get("fitness", 0)
+    rate = round((today_ctl - week_ago_ctl) / 7, 1)
+    if rate > 8:
+        return {"rate": rate, "risk": "high", "label": "Ramp too fast — injury risk elevated"}
+    if rate > 5:
+        return {"rate": rate, "risk": "caution", "label": "Building quickly — monitor recovery"}
+    if rate > 0:
+        return {"rate": rate, "risk": "good", "label": "Progressive overload — on track"}
+    if rate > -5:
+        return {"rate": rate, "risk": "declining", "label": "Fitness declining — normal during deload"}
+    return {"rate": rate, "risk": "tapering", "label": "Significant taper — race readiness building"}
+
+
 _VO2MAX_TYPES = {"Running", "Walking", "Hiking"}
 
 

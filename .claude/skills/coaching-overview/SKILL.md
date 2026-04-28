@@ -31,6 +31,24 @@
 - **TSB < -30**: very fatigued, injury risk
 - **Race day target**: TSB +10 to +25 (tapered and fresh)
 
+### Form Status (TSB-based, injected in preamble)
+| TSB Range | Status | Training Guidance |
+|---|---|---|
+| > 20 | Race ready | Peak freshness — ideal for racing or testing |
+| 5 to 20 | Recovered | Hard training OK — fitness gains possible |
+| -10 to 5 | Optimal training | Productive zone — absorbing load well |
+| -30 to -10 | Fatigued | Recovery needed — reduce intensity or rest |
+| < -30 | Very fatigued | Prioritize rest — injury/illness risk elevated |
+
+### Ramp Rate (CTL change per day over 7 days)
+| Rate | Risk Level | Meaning |
+|---|---|---|
+| > 8 | High | Ramping too fast — injury risk elevated |
+| 5 to 8 | Caution | Building quickly — monitor recovery closely |
+| 0 to 5 | Good | Progressive overload — on track |
+| -5 to 0 | Declining | Fitness declining — normal during deload/recovery |
+| < -5 | Tapering | Significant taper — race readiness building |
+
 ## Race-Specific Targets
 
 Race details (distances, cutoffs, targets, course notes) are injected in the system preamble from the events DB — no need to fetch them.
