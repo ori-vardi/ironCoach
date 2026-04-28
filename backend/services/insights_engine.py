@@ -21,11 +21,12 @@ from services.task_tracker import (
     _active_tasks, _active_tasks_lock,
 )
 from services.claude_cli import _find_claude_cli, _track_usage, _call_agent, _build_cli_env, _parse_stream_json, _get_model_override, _llm_preflight_check
-from services.coach_preamble import _build_coach_preamble
+from services.coach_preamble import _build_coach_preamble, _relative_day_label
 from services.weather import _format_weather, _get_first_gps, _fetch_external_weather, _format_external_weather
 from data_processing import (
     _safe_float, _classify_type, _enrich_workouts, _workout_distance, _load_summary,
-    _compute_sections, _find_workout_file,
+    _compute_sections, _find_workout_file, _load_workout_timeseries,
+    _compute_peak_efforts,
     _workout_csv_filename, _build_workout_data_summary,
     _build_recovery_sleep_context, _load_nutrition_window, _load_nutrition_settings,
     _detect_brick_sessions, _merge_nearby_workouts,
@@ -449,8 +450,30 @@ def _build_specialist_prompt(w: dict, sections: dict, plans: list, preamble: str
             f"range {es['min_m']:.0f}m-{es['max_m']:.0f}m"
         )
 
-    # Raw file paths for deeper analysis (use only when pre-computed data is insufficient)
+    # Peak efforts at key durations (compute from time-series)
     wnum = int(w.get("workout_num", 0))
+    if disc in ("run", "bike") and data_dir:
+        ts_data = _load_workout_timeseries(wnum, data_dir)
+        if ts_data and ts_data.get("data"):
+            peaks = _compute_peak_efforts(ts_data["data"], disc)
+            if peaks and peaks.get("durations"):
+                lines.append("")
+                lines.append("PEAK EFFORTS (best sustained averages at key durations):")
+                for pe in peaks["durations"]:
+                    parts = [pe["label"]]
+                    if pe.get("power"):
+                        parts.append(f"{pe['power']}W")
+                    if pe.get("hr"):
+                        parts.append(f"HR {pe['hr']}")
+                    if pe.get("pace_str"):
+                        parts.append(pe["pace_str"])
+                    if pe.get("speed_kmh"):
+                        parts.append(f"{pe['speed_kmh']} km/h")
+                    lines.append(f"  {' | '.join(parts)}")
+                if peaks.get("estimated_ftp"):
+                    lines.append(f"  Estimated FTP (95% of 20-min power): {peaks['estimated_ftp']}W")
+
+    # Raw file paths for deeper analysis (use only when pre-computed data is insufficient)
     variable_effort = has_intervals
     if data_dir:
         csv_file = _find_workout_file(wnum, ".csv", data_dir)
@@ -765,9 +788,11 @@ async def get_recent_insights_text(user_id: int = 1) -> str:
     if not insights:
         return ""
 
-    lines = ["[RECENT WORKOUT INSIGHTS (last 2 weeks)]"]
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    lines = [f"[RECENT WORKOUT INSIGHTS (last 2 weeks) — today is {today_str}]"]
     for ins in insights:
-        lines.append(f"## #{ins['workout_num']} — {ins['workout_type']} — {ins['workout_date']}")
+        rel = _relative_day_label(ins['workout_date'])
+        lines.append(f"## #{ins['workout_num']} — {ins['workout_type']} — {ins['workout_date']} ({rel})")
         lines.append(ins["insight"])
         if ins.get("plan_comparison"):
             lines.append(ins["plan_comparison"])
