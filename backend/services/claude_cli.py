@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 from config import _SESSIONS_DIR, PROJECT_ROOT, logger, coach_session_id, normalize_model
+from services.coach_preamble import _relative_day_label
 import database as db
 
 
@@ -292,9 +293,9 @@ async def _build_rotation_context(agent_name: str, user_id: int) -> str:
 
         lines = []
         for r in reversed(rows):  # oldest first
-            # Truncate each insight to ~300 chars to keep context small
+            rel = _relative_day_label(r['workout_date'])
             snippet = r["insight"][:300].rsplit(" ", 1)[0] + "..." if len(r["insight"]) > 300 else r["insight"]
-            lines.append(f"### #{r['workout_num']} {r['workout_type']} ({r['workout_date']})\n{snippet}")
+            lines.append(f"### #{r['workout_num']} {r['workout_type']} ({r['workout_date']} — {rel})\n{snippet}")
 
         return (
             "[SESSION ROTATED — here are your last 5 analyses for context. "

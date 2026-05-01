@@ -2009,12 +2009,16 @@ def _build_period_prompt(category: str, insights: list, workouts: list,
             return ""
         rec_lines = []
         for r in recovery[-14:]:
-            sleep_h = _safe_float(r.get("sleep_total_min")) / 60
+            total = _safe_float(r.get("sleep_total_min"))
+            awake = _safe_float(r.get("sleep_awake_min"))
+            net_h = (total - awake) / 60 if total else 0
             deep = _safe_float(r.get("sleep_deep_min"))
+            rem = _safe_float(r.get("sleep_rem_min"))
             rhr = _safe_float(r.get("resting_hr"))
             hrv = _safe_float(r.get("hrv_sdnn_ms"))
+            quality = round((deep + rem) / (total - awake) * 100) if (total - awake) > 0 else 0
             rec_lines.append(
-                f"- {r.get('date','')} Sleep:{sleep_h:.1f}h (deep:{deep:.0f}min) RHR:{rhr:.0f} HRV:{hrv:.0f}"
+                f"- {r.get('date','')} Sleep:{net_h:.1f}h (in-bed:{total / 60:.1f}h deep:{deep:.0f}min REM:{rem:.0f}min quality:{quality}%) RHR:{rhr:.0f} HRV:{hrv:.0f}"
             )
         workout_days = set(w.get("startDate", "")[:10] for w in workouts)
         rest_days_count = 0

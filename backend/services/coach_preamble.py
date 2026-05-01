@@ -96,8 +96,14 @@ def _get_current_recovery(user_data_dir, user_id: int = 1,
         if r.get("hrv_sdnn_ms"):
             stats["hrv_ms"] = round(_safe_float(r["hrv_sdnn_ms"]))
         if r.get("sleep_total_min"):
-            mins = _safe_float(r["sleep_total_min"])
-            stats["sleep_hours"] = f"{int(mins // 60)}h{int(mins % 60)}m"
+            total = _safe_float(r["sleep_total_min"])
+            awake = _safe_float(r.get("sleep_awake_min", 0))
+            net = total - awake
+            deep = _safe_float(r.get("sleep_deep_min", 0))
+            rem = _safe_float(r.get("sleep_rem_min", 0))
+            stats["sleep_hours"] = f"{int(net // 60)}h{int(net % 60)}m (in bed: {int(total // 60)}h{int(total % 60)}m)"
+            if net > 0:
+                stats["sleep_quality_pct"] = round((deep + rem) / net * 100)
 
     return stats
 
@@ -263,7 +269,12 @@ async def _build_coach_preamble(user_id: int = 1, agent_name: str = None, lang: 
             if recovery_stats.get('hrv_ms'):
                 parts.append(f"- HRV: **{recovery_stats['hrv_ms']} ms** (from {data_date})")
             if recovery_stats.get('sleep_hours'):
-                parts.append(f"- Sleep: **{recovery_stats['sleep_hours']}** (from {data_date})")
+                sleep_line = f"- Sleep: **{recovery_stats['sleep_hours']}** (from {data_date})"
+                if recovery_stats.get('sleep_quality_pct') is not None:
+                    q = recovery_stats['sleep_quality_pct']
+                    qlabel = "good" if q >= 30 else "fair" if q >= 25 else "low"
+                    sleep_line += f" — quality: {q}% ({qlabel})"
+                parts.append(sleep_line)
     except Exception as e:
         logger.debug("Failed to inject recovery stats into preamble: %s", e)
 

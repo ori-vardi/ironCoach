@@ -530,11 +530,13 @@ def _compute_readiness_score(
                 components["hrv"] = {"score": round(hrv_score, 1), "weight": W_HRV, "value": round(latest), "baseline": round(baseline), "date": latest_date}
                 available_weight += W_HRV
 
-    # 5. Sleep quality
+    # 5. Sleep quality — use net sleep (total minus awake) for more accurate scoring
     if recovery_data:
         for r in reversed(recovery_data):
-            sleep_min = r.get("sleep_total_min") or r.get("sleep_total", 0)
-            if sleep_min and sleep_min > 0:
+            sleep_total = r.get("sleep_total_min") or r.get("sleep_total", 0)
+            if sleep_total and sleep_total > 0:
+                sleep_awake = r.get("sleep_awake_min") or r.get("sleep_awake", 0)
+                sleep_min = sleep_total - sleep_awake
                 if sleep_min >= 420:
                     sleep_score = 100.0
                 elif sleep_min <= 300:
@@ -543,7 +545,22 @@ def _compute_readiness_score(
                     sleep_score = (sleep_min - 300) / 120 * 100
                 if sleep_min > 540:
                     sleep_score = max(70.0, sleep_score - (sleep_min - 540) / 60 * 10)
-                components["sleep"] = {"score": round(sleep_score, 1), "weight": W_SLEEP, "value": round(sleep_min / 60, 1), "date": r.get("date", "")}
+                # Quality bonus: reward high deep+REM ratio
+                deep = r.get("sleep_deep_min") or r.get("sleep_deep", 0)
+                rem = r.get("sleep_rem_min") or r.get("sleep_rem", 0)
+                if sleep_min > 0 and (deep + rem) > 0:
+                    quality_pct = (deep + rem) / sleep_min * 100
+                    if quality_pct >= 30:
+                        sleep_score = min(100.0, sleep_score + 5)
+                    elif quality_pct < 25:
+                        sleep_score = max(0.0, sleep_score - 5)
+                components["sleep"] = {
+                    "score": round(sleep_score, 1), "weight": W_SLEEP,
+                    "value": round(sleep_min / 60, 1),
+                    "total_hours": round(sleep_total / 60, 1),
+                    "net_hours": round(sleep_min / 60, 1),
+                    "date": r.get("date", ""),
+                }
                 available_weight += W_SLEEP
                 break
 

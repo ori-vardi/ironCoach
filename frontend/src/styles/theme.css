@@ -2594,11 +2594,12 @@ textarea { resize: vertical; min-height: 60px; text-align: start; }
     bottom: 12px;
     inset-inline-end: 12px;
     z-index: 1000;
-    background: rgba(15, 17, 23, 0.9);
+    background: rgba(15, 17, 23, 0.92);
     border: 1px solid var(--border);
     border-radius: 6px;
-    padding: 8px 10px;
+    padding: 8px 12px;
     font-size: 11px;
+    backdrop-filter: blur(4px);
 }
 .legend-title {
     font-weight: 600;
@@ -3056,6 +3057,31 @@ textarea { resize: vertical; min-height: 60px; text-align: start; }
     font-size: 12px;
     color: var(--text-dim);
     text-transform: uppercase;
+}
+.sleep-quality-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+.sleep-quality-bar-track {
+    flex: 1;
+    height: 6px;
+    background: var(--bg-2);
+    border-radius: 3px;
+    overflow: hidden;
+    max-width: 80px;
+}
+.sleep-quality-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.3s;
+}
+.sleep-quality-value {
+    font-size: 14px;
+    font-weight: 700;
+    font-feature-settings: "tnum";
+    min-width: 32px;
 }
 .sleep-composition-bar {
     display: flex;

@@ -325,8 +325,13 @@ async def _handle_chat_message(websocket: WebSocket, data: dict, ws_user_id: int
 
     bare_flag = ["--bare"] if chat_mode != "dev" else []
 
+    # Always prepend current date/time so the LLM never has to guess
+    msg_lang = _detect_lang(message)
+    from services.coach_preamble import _format_now
+    date_prefix = f"[Current date/time: {_format_now(msg_lang)}]\n\n"
+
     if existing:
-        cmd = [cli, *bare_flag, "--resume", agent_session_uuid, "-p", safe_prompt,
+        cmd = [cli, *bare_flag, "--resume", agent_session_uuid, "-p", date_prefix + safe_prompt,
                "--output-format", "stream-json", "--verbose",
                "--allowed-tools", allowed_tools,
                "--disallowed-tools", disallowed_tools]
@@ -377,13 +382,9 @@ async def _handle_chat_message(websocket: WebSocket, data: dict, ws_user_id: int
         except Exception as e:
             logger.warning(f"Could not load chat history for context: {e}")
 
-        # Detect language from user message for localized day names
-        msg_lang = _detect_lang(message)
-
         if chat_mode == "dev":
-            # Dev mode: inject current date/time + agent-specific memory (no coach preamble, no workout context)
-            from services.coach_preamble import _format_now
-            history_prefix = f"[Current date/time: {_format_now(msg_lang)}]\n\n" + history_prefix
+            # Dev mode: agent-specific memory (no coach preamble, no workout context)
+            # Date/time already prepended via date_prefix for all sessions
             try:
                 conn_am = await db.get_db()
                 try:

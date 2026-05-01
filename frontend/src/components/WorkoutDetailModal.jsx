@@ -774,13 +774,16 @@ function DetailMap({ pts, sections, badClusters }) {
   return (
     <div className={`detail-map${expanded ? ' interval-map-expanded' : ''}`}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-        <div className="map-hr-legend" style={{ position: 'static', background: 'none', padding: 0, display: 'flex', gap: 8, fontSize: 11 }}>
-          {Object.entries(HR_ZONE_LABELS).map(([z, label]) => (
-            <span key={z} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-              <span style={{ display: 'inline-block', width: 12, height: 3, background: HR_ZONE_COLORS[z] }} />
-              {label}
-            </span>
-          ))}
+        <div className="map-hr-legend" style={{ position: 'static' }}>
+          <div className="legend-title">{t('detail_hr_zones')}</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {Object.entries(HR_ZONE_LABELS).map(([z, label]) => (
+              <span key={z} className="legend-item" style={{ marginBottom: 0 }}>
+                <span className="legend-swatch" style={{ background: HR_ZONE_COLORS[z] }} />
+                {label}
+              </span>
+            ))}
+          </div>
         </div>
         <button className="btn btn-sm btn-icon" onClick={() => setExpanded(!expanded)} title={expanded ? 'Collapse' : 'Expand'}>
           {expanded ? '↙' : '↗'}

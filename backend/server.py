@@ -17,7 +17,10 @@ from datetime import datetime
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.formparsers import MultiPartParser
 from starlette.responses import Response
+
+MultiPartParser.max_part_size = 1024 * 1024 * 1024  # 1 GB (default 1 MB)
 
 import database as db
 from auth import decode_jwt
@@ -226,7 +229,7 @@ async def add_security_headers(request: Request, call_next):
 
 # ── Request Size Limit Middleware ────────────────────────────────────────────
 
-MAX_REQUEST_SIZE_MB = 50
+MAX_REQUEST_SIZE_MB = 1024
 MAX_REQUEST_SIZE_BYTES = MAX_REQUEST_SIZE_MB * 1024 * 1024
 
 
